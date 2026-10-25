@@ -464,7 +464,7 @@
       <button class="btn btn-add" data-i18n="btnSaveDelay" onclick="saveDelay()">Lưu thời gian chờ</button>
     </div>
 
-    <!-- THÊM MỚI: Cài đặt thời gian đề nổ (ms) từ 0.5s trở lên -->
+    <!-- Cài đặt thời gian đề nổ (ms) từ 0.5s trở lên -->
     <div class="section-title" data-i18n="starterTimeTitle">Cài đặt thời gian đề nổ</div>
     <div class="wifi-block">
       <span data-i18n="starterTimeDesc">Thời gian kích Relay đề (ms, tối thiểu 500)</span>
@@ -794,7 +794,6 @@ function toggleModal(show) {
   document.getElementById('settingsModal').classList.toggle('active', show);
 }
 
-// ================== BLE LAYER (thay cho fetch/WiFi) ==================
 Object.assign(i18n.vi, {
   standStatus: "Chân chống",
   bleDiagLabel: "Bluetooth",
@@ -845,7 +844,6 @@ let lastStatus = null, cfg = null;
 let lastStatusMsg = "";
 let fieldsLoaded = false;
 
-// Web Bluetooth chỉ cho 1 thao tác GATT tại một thời điểm -> xếp hàng
 let chain = Promise.resolve();
 function gatt(fn) {
   const r = chain.then(fn);
@@ -896,7 +894,6 @@ async function connectBle() {
   try {
     let server = null;
 
-    // Thử nối lại thiết bị đã chọn trước đó (không cần chọn lại)
     if (bleDevice) {
       try {
         setConnMsg(L('Đang kết nối lại...', 'Reconnecting...'));
@@ -1020,7 +1017,6 @@ async function refresh() {
   }
 }
 
-// Gửi 1 lệnh (<= 20 ký tự). Sau đó đọc lại trạng thái + cấu hình.
 async function send(text, toastMsg, quiet) {
   if (!connected) {
     showToast(L('⚠️ Chưa kết nối thiết bị!', '⚠️ Not connected!'));
@@ -1040,7 +1036,6 @@ async function send(text, toastMsg, quiet) {
   }
 }
 
-// ================== GIAO DIỆN ==================
 function toggleLang() {
   currentLang = currentLang === 'vi' ? 'eng' : 'vi';
   localStorage.setItem('lang', currentLang);
@@ -1157,7 +1152,6 @@ function renderConfig(c) {
   }
 }
 
-// ================== HÀNH ĐỘNG ==================
 function deleteRfid(specificIndex) {
   const rid = (specificIndex !== undefined) ? specificIndex : document.getElementById('rid').value;
   if (rid === "" || rid === null) return;
@@ -1212,7 +1206,7 @@ async function saveBleName() {
   }
   const ok = await send('name:' + name, L('🔄 Đã lưu tên, ESP32 đang khởi động lại...', '🔄 Saved, restarting...'), true);
   if (ok) {
-    bleDevice = null;   // tên đổi -> phải chọn lại thiết bị
+    bleDevice = null;
     setTimeout(disconnectBle, 800);
   }
 }
@@ -1228,7 +1222,6 @@ async function savePin() {
   }
 }
 
-// ================== KHỞI TẠO ==================
 try { document.getElementById('pinInput').value = localStorage.getItem('savedPin') || ''; } catch (e) {}
 updateLanguageUI();
 if (!navigator.bluetooth) {
@@ -1236,7 +1229,6 @@ if (!navigator.bluetooth) {
     'Trình duyệt này không hỗ trợ Web Bluetooth. iPhone: mở trang bằng Bluefy. Android: dùng Chrome.',
     'This browser has no Web Bluetooth. iPhone: open in Bluefy. Android: use Chrome.'), true);
 }
-
 </script>
 </body>
 </html>
