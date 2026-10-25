@@ -416,6 +416,15 @@
       <button class="mini-btn" id="langBtn" onclick="toggleLang()">🌐 VI</button>
     </div>
 
+    <!-- BỔ SUNG: Phần quản lý Vân tay ZW101 -->
+    <div class="section-title" data-i18n="fpTitle">Vân tay ZW101</div>
+    <button class="btn btn-add" data-i18n="addFp" onclick="send('addfp', i18n[currentLang].msgAddFp)">+ Thêm vân tay mới</button>
+    <div class="mgmt-row" style="margin-top: 8px;">
+      <span data-i18n="delFp">Xoá vân tay theo ID</span>
+      <input id="fpid" type="number" min="1" max="127">
+      <button class="mini-btn" data-i18n="btnDelete" onclick="deleteFingerprint()">Xoá</button>
+    </div>
+
     <div class="section-title" data-i18n="odoConfigTitle">Cập nhật công-tơ-mét</div>
     <div class="wifi-block">
       <span data-i18n="odoDesc">Số KM hiện tại trên đồng hồ xe</span>
@@ -464,7 +473,6 @@
       <button class="btn btn-add" data-i18n="btnSaveDelay" onclick="saveDelay()">Lưu thời gian chờ</button>
     </div>
 
-    <!-- Cài đặt thời gian đề nổ (ms) từ 0.5s trở lên -->
     <div class="section-title" data-i18n="starterTimeTitle">Cài đặt thời gian đề nổ</div>
     <div class="wifi-block">
       <span data-i18n="starterTimeDesc">Thời gian kích Relay đề (ms, tối thiểu 500)</span>
@@ -601,10 +609,10 @@ const i18n = {
     starterTimeTitle: "Cài đặt thời gian đề nổ",
     starterTimeDesc: "Thời gian kích Relay đề (ms, tối thiểu 500)",
     btnSaveStarter: "Lưu thời gian đề",
-    wifiTitle: "Cài đặt WiFi AP",
-    wifiSsid: "Tên WiFi (SSID)",
-    wifiPass: "Mật khẩu mới (tối thiểu 8 ký tự)",
-    btnSaveWifi: "Lưu WiFi & Đặt lại",
+    wifiTitle: "Cài đặt Bluetooth",
+    wifiSsid: "Tên Bluetooth",
+    wifiPass: "Mật khẩu",
+    btnSaveWifi: "Lưu",
     contactTitle: "Liên hệ hỗ trợ",
     btnDelete: "Xoá",
     online: "ONLINE",
@@ -626,7 +634,7 @@ const i18n = {
     msgUnlocked: "🔓 Đã gửi lệnh MỞ KHOÁ!",
     msgLocked: "🔒 Đã gửi lệnh KHOÁ XE!",
     msgStarter: "🚀 Đã kích hoạt ĐỀ MÁY!",
-    msgAddFp: "🖐️ Hãy đặt ngón tay lên cảm biến...",
+    msgAddFp: "🖐️ Hãy đặt ngón tay lên cảm biến (2 lần)...",
     msgAddRfid: "💳 Hãy đưa thẻ RFID lại gần đầu đọc...",
     msgSavedDelay: "⏱️ Đã cập nhật thời gian chờ!",
     msgSavedStarter: "⚡ Đã lưu thời gian đề nổ!",
@@ -683,10 +691,10 @@ const i18n = {
     starterTimeTitle: "Starter Time Settings",
     starterTimeDesc: "Starter relay activation time (ms, min 500)",
     btnSaveStarter: "Save Starter Time",
-    wifiTitle: "WiFi AP Settings",
-    wifiSsid: "WiFi Name (SSID)",
-    wifiPass: "New Password (min 8 chars)",
-    btnSaveWifi: "Save WiFi & Restart",
+    wifiTitle: "Bluetooth Settings",
+    wifiSsid: "Bluetooth Name",
+    wifiPass: "Password",
+    btnSaveWifi: "Save",
     contactTitle: "Contact Support",
     btnDelete: "Delete",
     online: "ONLINE",
@@ -708,7 +716,7 @@ const i18n = {
     msgUnlocked: "🔓 UNLOCK command sent!",
     msgLocked: "🔒 LOCK command sent!",
     msgStarter: "🚀 ENGINE START command sent!",
-    msgAddFp: "🖐️ Please place finger on sensor...",
+    msgAddFp: "🖐️ Place finger on sensor...",
     msgAddRfid: "💳 Please swipe RFID card...",
     msgSavedDelay: "⏱️ Delay time updated!",
     msgSavedStarter: "⚡ Starter time saved!",
@@ -1156,6 +1164,15 @@ function deleteRfid(specificIndex) {
   const rid = (specificIndex !== undefined) ? specificIndex : document.getElementById('rid').value;
   if (rid === "" || rid === null) return;
   send('delrfid:' + parseInt(rid, 10), i18n[currentLang].msgDelRfid + rid);
+}
+
+function deleteFingerprint() {
+  const fpid = document.getElementById('fpid').value;
+  if (fpid === "" || fpid === null) {
+    showToast(L('⚠️ Vui lòng nhập ID vân tay cần xoá!', '⚠️ Enter fingerprint ID!'));
+    return;
+  }
+  send('delfp:' + parseInt(fpid, 10), i18n[currentLang].msgDelFp + fpid);
 }
 
 function saveOdo() {
