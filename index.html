@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>HQT Smart Lock</title>
+  <style>
+    :root {
+      --bg: #0b101d;
+      --card: rgba(21, 29, 46, 0.85);
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #eef2f6;
+      --subtext: #8a97a8;
+      --green: #39ff6a;
+      --pink: #ff3b6f;
+      --cyan: #33e0ff;
+      --amber: #ffb020;
+      --blue: #2f9bff;
+      --purple: #a855f7;
+      --input-bg: #090d14;
+      --shadow: rgba(0,0,0,0.4);
+    }
+
+    [data-theme="light"] {
+      --bg: #eef2f5;
+      --card: rgba(255, 255, 255, 0.88);
+      --border: rgba(0, 0, 0, 0.12);
+      --text: #1a202c;
+      --subtext: #4a5568;
+      --green: #10b981;
+      --pink: #ef4444;
+      --cyan: #0284c7;
+      --amber: #d97706;
+      --blue: #2563eb;
+      --purple: #8b5cf6;
+      --input-bg: #f1f5f9;
+      --shadow: rgba(0,0,0,0.1);
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overscroll-behavior-y: none;
+      overscroll-behavior-x: none;
+    }
+
+    * {
+      box-sizing: border-box;
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 18px 14px 30px;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    #snowCanvas {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: -1;
+      pointer-events: none;
+      touch-action: none;
+      transform: translate3d(0, 0, 0);
+      will-change: transform;
+    }
+
+    .settings-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px var(--shadow);
+      z-index: 100;
+      backdrop-filter: blur(8px);
+    }
+    .settings-btn:active { transform: scale(0.92); }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.active { display: flex; }
+
+    .modal-content {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      width: 92%;
+      max-width: 450px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 20px;
+      box-shadow: 0 10px 30px var(--shadow);
+      position: relative;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .modal-header h2 { margin: 0; font-size: 18px; color: var(--cyan); }
+    .close-btn { font-size: 24px; cursor: pointer; color: var(--subtext); border: none; background: none; }
+
+    .header-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 10px;
+      margin-bottom: 20px;
+      position: relative;
+      text-align: center;
+    }
+    .logo-wrapper {
+      position: relative;
+      width: 84px;
+      height: 84px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo-ring {
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(51,224,255,0.15) 0%, rgba(11,16,29,0) 70%);
+      border: 2px solid transparent;
+      background-image: linear-gradient(var(--card), var(--card)), 
+                        linear-gradient(135deg, var(--cyan), var(--blue), var(--purple));
+      background-origin: border-box;
+      background-clip: padding-box, border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(51, 224, 255, 0.35);
+    }
+    .logo-wrapper::after {
+      content: '';
+      position: absolute;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      border: 1.5px dashed var(--cyan);
+      opacity: 0.5;
+      animation: spinRing 12s linear infinite;
+    }
+    @keyframes spinRing { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    .logo-text {
+      font-weight: 900;
+      font-size: 22px;
+      letter-spacing: 2px;
+      background: linear-gradient(180deg, #ffffff 0%, var(--cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+    }
+    .brand-wish {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--subtext);
+      font-style: italic;
+      opacity: 0.9;
+      margin-top: 10px;
+      letter-spacing: 0.3px;
+      line-height: 1.4;
+    }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 14px;
+      backdrop-filter: blur(8px);
+    }
+    .card .label { font-size: 11px; color: var(--subtext); text-transform: uppercase; letter-spacing: 0.5px; }
+    .card .value { font-size: 16px; font-weight: 700; margin-top: 4px; }
+    .card-highlight { border-color: var(--amber); background: rgba(255, 176, 32, 0.08); }
+    
+    .card-alert {
+      grid-column: span 2;
+      border: 1px solid var(--border);
+      background: var(--card);
+      transition: all 0.3s ease;
+    }
+    .card-alert.active-alert {
+      border-color: var(--pink);
+      background: rgba(255, 59, 111, 0.15);
+      animation: alertPulse 1s infinite alternate;
+    }
+    @keyframes alertPulse {
+      0% { box-shadow: 0 0 5px rgba(255, 59, 111, 0.4); }
+      100% { box-shadow: 0 0 20px rgba(255, 59, 111, 0.9); }
+    }
+
+    .on { color: var(--green); }
+    .off { color: var(--subtext); }
+    .warn { color: var(--amber); }
+    .danger { color: var(--pink); }
+
+    .btn {
+      display: block; width: 100%; padding: 15px; margin: 10px 0; border-radius: 14px;
+      font-size: 15px; font-weight: 700; background: var(--card); cursor: pointer;
+      backdrop-filter: blur(6px); letter-spacing: 0.3px; border: 1.5px solid var(--border);
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-unlock { border-color: var(--green); color: var(--green); }
+    .btn-lock { border-color: var(--pink); color: var(--pink); }
+    .btn-start { border-color: var(--cyan); color: var(--cyan); }
+    .btn-find { border-color: var(--purple); color: var(--purple); }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn-add { border-color: var(--amber); color: var(--amber); }
+
+    .section-title {
+      margin: 18px 0 10px; font-size: 12px; color: var(--subtext); text-transform: uppercase;
+      letter-spacing: 1px; border-bottom: 1px solid var(--border); padding-bottom: 6px;
+    }
+    .mgmt-row {
+      display: flex; align-items: center; gap: 10px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+    }
+    .mgmt-row span { flex: 1; font-size: 14px; color: var(--text); }
+    .mgmt-row input {
+      width: 70px; padding: 8px; text-align: center; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--input-bg); color: var(--text);
+    }
+    .mini-btn { border: 1.5px solid var(--amber); color: var(--amber); background: transparent; border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+    .copy-btn { border-color: var(--cyan); color: var(--cyan); }
+    
+    .wifi-block {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .wifi-block input {
+      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--input-bg); color: var(--text); font-size: 14px;
+    }
+
+    .switch-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 12px; background: var(--input-bg); border-radius: 12px; margin-bottom: 10px;
+    }
+
+    .contact-container {
+      display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+    }
+    .contact-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px;
+    }
+    .contact-link {
+      text-decoration: none; font-size: 13px; font-weight: 600; color: var(--cyan); flex: 1;
+    }
+
+    #toastContainer {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
+      width: 90%; max-width: 360px; pointer-events: none;
+    }
+    .toast {
+      background: var(--card); border: 1.5px solid var(--cyan); color: var(--text);
+      padding: 14px 18px; border-radius: 16px; font-size: 14px; font-weight: 600;
+      box-shadow: 0 10px 25px var(--shadow); backdrop-filter: blur(12px);
+      text-align: center; pointer-events: auto;
+      animation: fadeInDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fadeOut 0.4s ease 2.6s forwards;
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-20px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(-10px) scale(0.9); }
+    }
+
+    footer { margin-top: 25px; text-align: center; font-size: 12px; color: var(--subtext); line-height: 1.5; }
+    footer hr { border: none; border-top: 1px solid var(--border); margin-bottom: 12px; }
+
+    .conn-input {
+      width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--input-bg); color: var(--text); font-size: 20px;
+      text-align: center; letter-spacing: 6px; margin: 10px 0;
+    }
+    #connMsg { font-size: 13px; color: var(--subtext); line-height: 1.5; text-align: center; margin: 8px 0 4px; }
+    .conn-title { margin: 14px 0 0; text-align: center; font-size: 18px; color: var(--cyan); }
+    .btn:disabled { opacity: 0.5; }
+  </style>
+</head>
+<body>
+
+<canvas id="snowCanvas"></canvas>
+<div id="toastContainer"></div>
+
+<div class="modal-overlay active" id="connectModal">
+  <div class="modal-content">
+    <div class="header-container" style="margin-bottom:0;">
+      <div class="logo-wrapper"><div class="logo-ring"><span class="logo-text">HQT</span></div></div>
+    </div>
+    <h2 class="conn-title" data-i18n="connTitle">Kết nối xe</h2>
+    <div id="connMsg" data-i18n="connHint">Bật Bluetooth, đứng gần xe, nhập PIN rồi bấm Kết nối.</div>
+    <input id="pinInput" class="conn-input" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off">
+    <button id="connectBtn" class="btn btn-start" data-i18n="btnConnect" onclick="connectBle()">🔵 KẾT NỐI BLUETOOTH</button>
+  </div>
+</div>
+
+<button class="settings-btn" onclick="toggleModal(true)">⚙️</button>
+
+<div class="header-container">
+  <div class="logo-wrapper">
+    <div class="logo-ring">
+      <span class="logo-text">HQT</span>
+    </div>
+  </div>
+  <div class="brand-wish">chúc bạn có một trải nghiệm đáng để trải nghiệm :)))</div>
+</div>
+
+<div class="grid">
+  <div class="card card-alert" id="alertCard">
+    <div class="label" data-i18n="alertLabel">Cảnh báo hệ thống</div>
+    <div class="value off" id="gAlertValue">BÌNH THƯỜNG</div>
+  </div>
+
+  <div class="card"><div class="label" data-i18n="sys">Hệ thống</div><div class="value on">ONLINE</div></div>
+  <div class="card"><div class="label" data-i18n="lockStatus">Trạng thái khoá</div><div class="value" id="gLock">--</div></div>
+  <div class="card"><div class="label" data-i18n="engineStatus">Khởi động máy</div><div class="value" id="gEngine">--</div></div>
+  
+  <div class="card">
+    <div class="label" data-i18n="vBattLabel">Ắc Quy & Nguồn</div>
+    <div class="value on" id="gVBatt">-- V</div>
+    <div style="font-size: 10px; color: var(--subtext); margin-top: 2px;" id="gPowerType">--</div>
+  </div>
+
+  <div class="card"><div class="label" data-i18n="standStatus">Chân chống</div><div class="value on" id="gStand">--</div></div>
+  <div class="card"><div class="label" data-i18n="odometerLabel">Quãng đường đã đi</div><div class="value on" id="gOdo">0 km</div></div>
+  
+  <div class="card card-highlight">
+    <div class="label" data-i18n="oilRemLabel">KM thay dầu còn lại</div>
+    <div class="value warn" id="gOilRem">-- km</div>
+  </div>
+</div>
+
+<div class="section-title" data-i18n="diagnosticsTitle">Chẩn đoán ngoại vi & Hệ thống</div>
+<div class="grid">
+  <div class="card">
+    <div class="label" data-i18n="fpDiagLabel">Vân tay ZW101</div>
+    <div class="value" id="gFpStatus">--</div>
+  </div>
+  <div class="card">
+    <div class="label" data-i18n="rfidDiagLabel">Thẻ RFID</div>
+    <div class="value" id="gRfidStatus">--</div>
+  </div>
+  <div class="card">
+    <div class="label" data-i18n="relayDiagLabel">Rơ-le (Khóa/Đề)</div>
+    <div class="value" id="gRelayStatus">--</div>
+  </div>
+  <div class="card">
+    <div class="label" data-i18n="bleDiagLabel">Bluetooth</div>
+    <div class="value" id="gBleStatus">--</div>
+  </div>
+</div>
+
+<button class="btn btn-find" data-i18n="btnFind" onclick="triggerFindBike()">🔔 TÌM XE TRONG BÃI</button>
+<button class="btn btn-unlock" data-i18n="btnUnlock" onclick="send('unlock', i18n[currentLang].msgUnlocked)">CHO PHÉP HOẠT ĐỘNG (MỞ KHOÁ)</button>
+
+<div class="btn-row">
+  <button class="btn btn-start" data-i18n="btnStart" onclick="send('start', i18n[currentLang].msgStarter)">NHẤN ĐỂ ĐỀ 🚀</button>
+  <button class="btn btn-lock" data-i18n="btnLock" onclick="send('lock', i18n[currentLang].msgLocked)">NGỪNG HOẠT ĐỘNG (KHOÁ)</button>
+</div>
+
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 data-i18n="settingsTitle">Cài Đặt Hệ Thống</h2>
+      <button class="close-btn" onclick="toggleModal(false)">&times;</button>
+    </div>
+
+    <div class="switch-row">
+      <span data-i18n="themeLabel">Giao diện</span>
+      <button class="mini-btn" id="themeBtn" onclick="toggleTheme()">🌙 Tối</button>
+    </div>
+
+    <div class="switch-row">
+      <span data-i18n="langLabel">Ngôn ngữ</span>
+      <button class="mini-btn" id="langBtn" onclick="toggleLang()">🌐 VI</button>
+    </div>
+
+    <div class="section-title" data-i18n="odoConfigTitle">Cập nhật công-tơ-mét</div>
+    <div class="wifi-block">
+      <span data-i18n="odoDesc">Số KM hiện tại trên đồng hồ xe</span>
+      <input id="odoKmInput" type="number" placeholder="Ví dụ: 12500">
+      <button class="btn btn-add" data-i18n="btnSaveOdo" onclick="saveOdo()">Cập nhật Odometer</button>
+    </div>
+
+    <div class="section-title" data-i18n="oilConfigTitle">Cài đặt định mức thay dầu</div>
+    <div class="wifi-block">
+      <span data-i18n="oilKmDesc">Số KM mỗi lần thay dầu (Km)</span>
+      <input id="oilLimitKm" type="number" placeholder="Ví dụ: 1500">
+      <span data-i18n="oilDaysDesc">Số ngày định kỳ thay dầu (Ngày)</span>
+      <input id="oilLimitDays" type="number" placeholder="Ví dụ: 90">
+      <button class="btn btn-add" data-i18n="btnSaveOilConfig" onclick="saveOilConfig()">Lưu định mức thay dầu</button>
+    </div>
+
+    <div class="section-title" data-i18n="maintTitle">Lịch bảo dưỡng & Thay thế</div>
+    <div class="wifi-block">
+      <span data-i18n="oilDateLabel">🛢️ Ngày thay dầu máy gần nhất:</span>
+      <input id="oilDate" type="date">
+      
+      <span data-i18n="serviceDateLabel">🛠️ Ngày bảo dưỡng xe gần nhất:</span>
+      <input id="serviceDate" type="date">
+      
+      <span data-i18n="airFilterDateLabel">🌬️ Ngày thay lọc gió gần nhất:</span>
+      <input id="airFilterDate" type="date">
+
+      <button class="btn btn-add" data-i18n="btnSaveMaint" onclick="saveMaintenance()">Lưu nhật ký bảo dưỡng</button>
+    </div>
+
+    <div class="section-title" data-i18n="rfidTitle">Thẻ RFID</div>
+    <button class="btn btn-add" data-i18n="addRfid" onclick="send('addrfid', i18n[currentLang].msgAddRfid)">+ Thêm thẻ mới</button>
+    
+    <div id="rfidContainer" class="contact-container" style="margin-top: 8px; margin-bottom: 12px;"></div>
+
+    <div class="mgmt-row">
+      <span data-i18n="delRfid">Xoá thẻ theo STT</span>
+      <input id="rid" type="number" min="0">
+      <button class="mini-btn" data-i18n="btnDelete" onclick="deleteRfid()">Xoá</button>
+    </div>
+
+    <div class="section-title" data-i18n="delayTitle">Thời gian chờ trước khi đề</div>
+    <div class="wifi-block">
+      <span data-i18n="delayDesc">Số giây chờ sau khi mở khoá</span>
+      <input id="delaySec" type="number" min="1" max="30">
+      <button class="btn btn-add" data-i18n="btnSaveDelay" onclick="saveDelay()">Lưu thời gian chờ</button>
+    </div>
+
+    <!-- THÊM MỚI: Cài đặt thời gian đề nổ (ms) từ 0.5s trở lên -->
+    <div class="section-title" data-i18n="starterTimeTitle">Cài đặt thời gian đề nổ</div>
+    <div class="wifi-block">
+      <span data-i18n="starterTimeDesc">Thời gian kích Relay đề (ms, tối thiểu 500)</span>
+      <input id="starterMs" type="number" min="500" step="100" placeholder="Ví dụ: 1500">
+      <button class="btn btn-add" data-i18n="btnSaveStarter" onclick="saveStarterTime()">Lưu thời gian đề</button>
+    </div>
+
+    <div class="section-title" data-i18n="wifiTitle">Cài đặt Bluetooth</div>
+    <div class="wifi-block">
+      <span data-i18n="bleNameDesc">Tên Bluetooth (tối đa 12 ký tự)</span>
+      <input id="bleNameInput" type="text" maxlength="12">
+      <button class="btn btn-add" data-i18n="btnSaveBleName" onclick="saveBleName()">Lưu tên &amp; Khởi động lại</button>
+    </div>
+    <div class="wifi-block">
+      <span data-i18n="pinDesc">Đổi PIN (4-8 chữ số)</span>
+      <input id="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••••">
+      <button class="btn btn-add" data-i18n="btnSavePin" onclick="savePin()">Lưu PIN mới</button>
+    </div>
+    <button class="btn btn-lock" data-i18n="btnDisconnect" onclick="disconnectBle()">Ngắt kết nối</button>
+
+    <div class="section-title" data-i18n="contactTitle">Liên hệ hỗ trợ</div>
+    <div class="contact-container">
+      <div class="contact-item">
+        <a class="contact-link" href="https://zalo.me/0375354596" target="_blank">💬 Zalo: 0375354596</a>
+        <button class="mini-btn copy-btn" onclick="copyToClipboard('0375354596', '📋 Đã sao chép SĐT Zalo!')">📋 Copy</button>
+      </div>
+      <div class="contact-item">
+        <a class="contact-link" href="https://facebook.com/huanquangtran25" target="_blank">🌐 Facebook: HuanQuangTran</a>
+        <button class="mini-btn copy-btn" onclick="copyToClipboard('https://facebook.com/huanquangtran25', '📋 Đã sao chép Link Facebook!')">📋 Copy</button>
+      </div>
+      <div class="contact-item">
+        <a class="contact-link" href="mailto:huanmomk5@gmail.com">✉️ Email Support</a>
+        <button class="mini-btn copy-btn" onclick="copyToClipboard('huanmomk5@gmail.com', '📋 Đã sao chép Email!')">📋 Copy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <hr>
+  © 2026 Huân Quang Trần. Bản quyền phần mềm thuộc về tác giả.<br>
+  Hân hạnh được phục vụ mọi người.
+</footer>
+
+<script>
+function showToast(message) {
+  if (!message) return;
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerText = message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 3000);
+}
+
+function copyToClipboard(text, successMsg) {
+  if (!text) {
+    showToast("⚠️ Không có nội dung để sao chép!");
+    return;
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(successMsg || "📋 Đã sao chép vào bộ nhớ tạm!");
+    }).catch(() => {
+      fallbackCopyText(text, successMsg);
+    });
+  } else {
+    fallbackCopyText(text, successMsg);
+  }
+}
+
+function fallbackCopyText(text, successMsg) {
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    document.execCommand('copy');
+    showToast(successMsg || "📋 Đã sao chép vào bộ nhớ tạm!");
+  } catch (err) {
+    showToast("❌ Sao chép thất bại!");
+  }
+  document.body.removeChild(textArea);
+}
+
+const i18n = {
+  vi: {
+    alertLabel: "Cảnh báo hệ thống",
+    alertNormal: "BÌNH THƯỜNG",
+    alertActive: "🚨 ĐANG PHÁT TÍN HIỆU CẢNH BÁO!",
+    sys: "Hệ thống",
+    lockStatus: "Trạng thái khoá",
+    engineStatus: "Khởi động máy",
+    vBattLabel: "Nguồn & Ắc Quy",
+    gearStatus: "Số hiện tại",
+    odometerLabel: "Quãng đường đã đi",
+    oilRemLabel: "KM thay dầu còn lại",
+    diagnosticsTitle: "Chẩn đoán ngoại vi & Hệ thống",
+    fpDiagLabel: "Vân tay ZW101",
+    rfidDiagLabel: "Thẻ RFID",
+    relayDiagLabel: "Rơ-le (Khóa/Đề)",
+    gearDiagLabel: "Cảm biến Số (Gear/N)",
+    btnFind: "🔔 TÌM XE TRONG BÃI",
+    btnUnlock: "CHO PHÉP HOẠT ĐỘNG (MỞ KHOÁ)",
+    btnStart: "NHẤN ĐỂ ĐỀ 🚀",
+    btnLock: "NGỪNG HOẠT ĐỘNG (KHOÁ)",
+    settingsTitle: "Cài Đặt Hệ Thống",
+    themeLabel: "Giao diện",
+    langLabel: "Ngôn ngữ",
+    odoConfigTitle: "Cập nhật công-tơ-mét",
+    odoDesc: "Số KM hiện tại trên đồng hồ xe",
+    btnSaveOdo: "Cập nhật Odometer",
+    oilConfigTitle: "Cài đặt định mức thay dầu",
+    oilKmDesc: "Số KM mỗi lần thay dầu (Km)",
+    oilDaysDesc: "Số ngày định kỳ thay dầu (Ngày)",
+    btnSaveOilConfig: "Lưu định mức thay dầu",
+    maintTitle: "Lịch bảo dưỡng & Thay thế",
+    oilDateLabel: "🛢️ Ngày thay dầu máy gần nhất:",
+    serviceDateLabel: "🛠️ Ngày bảo dưỡng xe gần nhất:",
+    airFilterDateLabel: "🌬️ Ngày thay lọc gió gần nhất:",
+    btnSaveMaint: "Lưu nhật ký bảo dưỡng",
+    fpTitle: "Vân tay ZW101",
+    addFp: "+ Thêm vân tay mới",
+    delFp: "Xoá vân tay theo ID",
+    rfidTitle: "Thẻ RFID",
+    addRfid: "+ Thêm thẻ mới",
+    delRfid: "Xoá thẻ theo STT",
+    delayTitle: "Thời gian chờ trước khi đề",
+    delayDesc: "Số giây chờ sau khi mở khoá",
+    btnSaveDelay: "Lưu thời gian chờ",
+    starterTimeTitle: "Cài đặt thời gian đề nổ",
+    starterTimeDesc: "Thời gian kích Relay đề (ms, tối thiểu 500)",
+    btnSaveStarter: "Lưu thời gian đề",
+    wifiTitle: "Cài đặt WiFi AP",
+    wifiSsid: "Tên WiFi (SSID)",
+    wifiPass: "Mật khẩu mới (tối thiểu 8 ký tự)",
+    btnSaveWifi: "Lưu WiFi & Đặt lại",
+    contactTitle: "Liên hệ hỗ trợ",
+    btnDelete: "Xoá",
+    online: "ONLINE",
+    offline: "OFFLINE",
+    powerBike: "Ắc quy xe",
+    powerUsb: "USB 5V",
+    powerNormal: "Bình thường",
+    powerRecharge: "Nhắc sạc",
+    powerLow: "Yếu điện",
+    fpOk: "OK",
+    fpErr: "Lỗi kết nối",
+    rfidOk: "Hoạt động",
+    rfidErr: "Sự cố",
+    relayActive: "Đang kích hoạt",
+    relayIdle: "An toàn / Ngắt",
+    gearN: "Đang ở số N",
+    gearEngaged: "Đang vào số",
+    msgFinding: "🔔 Đang phát tín hiệu TÌM XE...",
+    msgUnlocked: "🔓 Đã gửi lệnh MỞ KHOÁ!",
+    msgLocked: "🔒 Đã gửi lệnh KHOÁ XE!",
+    msgStarter: "🚀 Đã kích hoạt ĐỀ MÁY!",
+    msgAddFp: "🖐️ Hãy đặt ngón tay lên cảm biến...",
+    msgAddRfid: "💳 Hãy đưa thẻ RFID lại gần đầu đọc...",
+    msgSavedDelay: "⏱️ Đã cập nhật thời gian chờ!",
+    msgSavedStarter: "⚡ Đã lưu thời gian đề nổ!",
+    msgDelFp: "🗑️ Đã gửi lệnh xoá vân tay ID ",
+    msgDelRfid: "🗑️ Đã gửi lệnh xoá thẻ RFID #",
+    msgSavedOilConfig: "🛢️ Đã lưu định mức thay dầu!",
+    msgSavedMaint: "🛠️ Đã cập nhật lịch bảo dưỡng!",
+    msgSavedOdo: "🚗 Đã cập nhật số KM Odometer!"
+  },
+  eng: {
+    alertLabel: "System Alert",
+    alertNormal: "NORMAL",
+    alertActive: "🚨 SIGNALING WARNING ALERT!",
+    sys: "System",
+    lockStatus: "Lock Status",
+    engineStatus: "Engine Status",
+    vBattLabel: "Power & Battery",
+    gearStatus: "Current Gear",
+    odometerLabel: "Odometer",
+    oilRemLabel: "Oil Change Remaining",
+    diagnosticsTitle: "Peripheral & System Diagnostics",
+    fpDiagLabel: "Fingerprint ZW101",
+    rfidDiagLabel: "RFID Card Reader",
+    relayDiagLabel: "Relays (Lock/Start)",
+    gearDiagLabel: "Gear Sensor (Gear/N)",
+    btnFind: "🔔 FIND VEHICLE",
+    btnUnlock: "ALLOW OPERATION (UNLOCK)",
+    btnStart: "PRESS TO START 🚀",
+    btnLock: "STOP OPERATION (LOCK)",
+    settingsTitle: "System Settings",
+    themeLabel: "Theme",
+    langLabel: "Language",
+    odoConfigTitle: "Update Odometer",
+    odoDesc: "Current Odometer Mileage (Km)",
+    btnSaveOdo: "Update Odometer",
+    oilConfigTitle: "Oil Change Thresholds",
+    oilKmDesc: "Oil change interval (Km)",
+    oilDaysDesc: "Oil change interval (Days)",
+    btnSaveOilConfig: "Save Oil Thresholds",
+    maintTitle: "Maintenance & Service Log",
+    oilDateLabel: "🛢️ Last Oil Change Date:",
+    serviceDateLabel: "🛠️ Last Service Date:",
+    airFilterDateLabel: "🌬️ Last Air Filter Date:",
+    btnSaveMaint: "Save Service Log",
+    fpTitle: "Fingerprint ZW101",
+    addFp: "+ Add New Fingerprint",
+    delFp: "Delete Fingerprint by ID",
+    rfidTitle: "RFID Card",
+    addRfid: "+ Add New Card",
+    delRfid: "Delete Card by Index",
+    delayTitle: "Delay Time Before Start",
+    delayDesc: "Seconds delay after unlock",
+    btnSaveDelay: "Save Delay Time",
+    starterTimeTitle: "Starter Time Settings",
+    starterTimeDesc: "Starter relay activation time (ms, min 500)",
+    btnSaveStarter: "Save Starter Time",
+    wifiTitle: "WiFi AP Settings",
+    wifiSsid: "WiFi Name (SSID)",
+    wifiPass: "New Password (min 8 chars)",
+    btnSaveWifi: "Save WiFi & Restart",
+    contactTitle: "Contact Support",
+    btnDelete: "Delete",
+    online: "ONLINE",
+    offline: "OFFLINE",
+    powerBike: "Bike Battery",
+    powerUsb: "USB 5V",
+    powerNormal: "Normal",
+    powerRecharge: "Recharge",
+    powerLow: "Low Voltage",
+    fpOk: "OK",
+    fpErr: "Connection Error",
+    rfidOk: "Operational",
+    rfidErr: "Malfunction",
+    relayActive: "Active",
+    relayIdle: "Idle / Off",
+    gearN: "Neutral (N)",
+    gearEngaged: "Gear Engaged",
+    msgFinding: "🔔 Locating vehicle...",
+    msgUnlocked: "🔓 UNLOCK command sent!",
+    msgLocked: "🔒 LOCK command sent!",
+    msgStarter: "🚀 ENGINE START command sent!",
+    msgAddFp: "🖐️ Please place finger on sensor...",
+    msgAddRfid: "💳 Please swipe RFID card...",
+    msgSavedDelay: "⏱️ Delay time updated!",
+    msgSavedStarter: "⚡ Starter time saved!",
+    msgDelFp: "🗑 Deleted fingerprint ID ",
+    msgDelRfid: "🗑️ Deleted RFID card #",
+    msgSavedOilConfig: "🛢️ Oil thresholds saved!",
+    msgSavedMaint: "🛠️ Maintenance log updated!",
+    msgSavedOdo: "🚗 Odometer updated!"
+  }
+};
+
+let currentLang = localStorage.getItem('lang') || 'vi';
+
+function updateLanguageUI() {
+  const langBtn = document.getElementById('langBtn');
+  if (langBtn) langBtn.innerText = currentLang === 'vi' ? '🌐 VI' : '🌐 ENG';
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (i18n[currentLang] && i18n[currentLang][key]) {
+      el.innerText = i18n[currentLang][key];
+    }
+  });
+}
+
+function toggleLang() {
+  currentLang = currentLang === 'vi' ? 'eng' : 'vi';
+  localStorage.setItem('lang', currentLang);
+  updateLanguageUI();
+  refresh();
+}
+
+const canvas = document.getElementById('snowCanvas');
+const ctx = canvas.getContext('2d');
+let flakes = [];
+let W = window.innerWidth;
+let H = window.innerHeight;
+
+function initSnow() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  flakes = [];
+  const flakeCount = Math.min(80, Math.floor(W / 5));
+  for (let i = 0; i < flakeCount; i++) {
+    flakes.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 2.5 + 0.8, d: Math.random() * 0.8 + 0.4,
+      opacity: Math.random() * 0.7 + 0.3, sway: Math.random() * 0.05
+    });
+  }
+}
+
+function drawSnow() {
+  ctx.clearRect(0, 0, W, H);
+  const isLight = document.body.getAttribute('data-theme') === 'light';
+  flakes.forEach(f => {
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+    ctx.fillStyle = isLight ? `rgba(2, 132, 199, ${f.opacity * 0.5})` : `rgba(255, 255, 255, ${f.opacity})`;
+    ctx.fill();
+    f.y += f.d; f.x += Math.sin(f.y * 0.02) * f.sway * 10;
+    if (f.y > H + 5) { f.y = -5; f.x = Math.random() * W; }
+  });
+  requestAnimationFrame(drawSnow);
+}
+
+window.addEventListener('resize', initSnow);
+initSnow(); drawSnow();
+
+function toggleTheme() {
+  const currentTheme = document.body.getAttribute('data-theme');
+  const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+  document.body.setAttribute('data-theme', newTheme);
+  const themeBtn = document.getElementById('themeBtn');
+  if (themeBtn) themeBtn.innerText = newTheme === 'light' ? '☀️ Sáng' : '🌙 Tối';
+  localStorage.setItem('theme', newTheme);
+}
+
+const savedTheme = localStorage.getItem('theme') || 'dark';
+document.body.setAttribute('data-theme', savedTheme);
+const themeBtnInit = document.getElementById('themeBtn');
+if (themeBtnInit) themeBtnInit.innerText = savedTheme === 'light' ? '☀️ Sáng' : '🌙 Tối';
+
+function toggleModal(show) {
+  document.getElementById('settingsModal').classList.toggle('active', show);
+}
+
+// ================== BLE LAYER (thay cho fetch/WiFi) ==================
+Object.assign(i18n.vi, {
+  standStatus: "Chân chống",
+  bleDiagLabel: "Bluetooth",
+  standUp: "Đã gạt lên",
+  standDown: "ĐANG HẠ",
+  bleOk: "Đã kết nối",
+  wifiTitle: "Cài đặt Bluetooth",
+  bleNameDesc: "Tên Bluetooth (tối đa 12 ký tự)",
+  btnSaveBleName: "Lưu tên & Khởi động lại",
+  pinDesc: "Đổi PIN (4-8 chữ số)",
+  btnSavePin: "Lưu PIN mới",
+  btnDisconnect: "Ngắt kết nối",
+  connTitle: "Kết nối xe",
+  connHint: "Bật Bluetooth, đứng gần xe, nhập PIN rồi bấm Kết nối.",
+  btnConnect: "🔵 KẾT NỐI BLUETOOTH"
+});
+Object.assign(i18n.eng, {
+  standStatus: "Side Stand",
+  bleDiagLabel: "Bluetooth",
+  standUp: "Up",
+  standDown: "DOWN",
+  bleOk: "Connected",
+  wifiTitle: "Bluetooth Settings",
+  bleNameDesc: "Bluetooth name (max 12 chars)",
+  btnSaveBleName: "Save name & Restart",
+  pinDesc: "Change PIN (4-8 digits)",
+  btnSavePin: "Save new PIN",
+  btnDisconnect: "Disconnect",
+  connTitle: "Connect to bike",
+  connHint: "Turn on Bluetooth, stay near the bike, enter PIN and tap Connect.",
+  btnConnect: "🔵 CONNECT BLUETOOTH"
+});
+
+const SERVICE_UUID = '7a1c0001-5b6e-4c1d-9a3e-2f6d8b4c1e01';
+const CMD_UUID     = '7a1c0002-5b6e-4c1d-9a3e-2f6d8b4c1e01';
+const STATUS_UUID  = '7a1c0003-5b6e-4c1d-9a3e-2f6d8b4c1e01';
+const CONFIG_UUID  = '7a1c0004-5b6e-4c1d-9a3e-2f6d8b4c1e01';
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const L = (vi, en) => (currentLang === 'vi' ? vi : en);
+
+let bleDevice = null, chCmd = null, chStatus = null, chConfig = null;
+let connected = false;
+let pollGen = 0;
+let lastStatus = null, cfg = null;
+let lastStatusMsg = "";
+let fieldsLoaded = false;
+
+// Web Bluetooth chỉ cho 1 thao tác GATT tại một thời điểm -> xếp hàng
+let chain = Promise.resolve();
+function gatt(fn) {
+  const r = chain.then(fn);
+  chain = r.catch(() => {});
+  return r;
+}
+
+function readJson(ch) {
+  return gatt(async () => {
+    const v = await ch.readValue();
+    return JSON.parse(dec.decode(v));
+  });
+}
+
+function writeCmd(text) {
+  return gatt(async () => {
+    const d = enc.encode(text);
+    if (chCmd.writeValueWithResponse) await chCmd.writeValueWithResponse(d);
+    else await chCmd.writeValue(d);
+  });
+}
+
+function setConnMsg(msg, isErr) {
+  const el = document.getElementById('connMsg');
+  el.innerText = msg;
+  el.style.color = isErr ? 'var(--pink)' : 'var(--subtext)';
+}
+
+function showConnect(show) {
+  document.getElementById('connectModal').classList.toggle('active', show);
+}
+
+async function connectBle() {
+  const btn = document.getElementById('connectBtn');
+  if (!navigator.bluetooth) {
+    setConnMsg(L(
+      'Trình duyệt này không hỗ trợ Web Bluetooth. iPhone: mở trang bằng Bluefy. Android: dùng Chrome.',
+      'This browser has no Web Bluetooth. iPhone: open in Bluefy. Android: use Chrome.'), true);
+    return;
+  }
+  const pin = document.getElementById('pinInput').value.trim();
+  if (!/^\d{4,8}$/.test(pin)) {
+    setConnMsg(L('PIN gồm 4-8 chữ số', 'PIN must be 4-8 digits'), true);
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    let server = null;
+
+    // Thử nối lại thiết bị đã chọn trước đó (không cần chọn lại)
+    if (bleDevice) {
+      try {
+        setConnMsg(L('Đang kết nối lại...', 'Reconnecting...'));
+        server = await bleDevice.gatt.connect();
+      } catch (e) {
+        bleDevice = null;
+        server = null;
+      }
+    }
+
+    if (!server) {
+      setConnMsg(L('Chọn thiết bị trong danh sách...', 'Pick your device...'));
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }]
+      });
+      bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+      setConnMsg(L('Đang kết nối...', 'Connecting...'));
+      server = await bleDevice.gatt.connect();
+    }
+
+    const svc = await server.getPrimaryService(SERVICE_UUID);
+    chCmd = await svc.getCharacteristic(CMD_UUID);
+    chStatus = await svc.getCharacteristic(STATUS_UUID);
+    chConfig = await svc.getCharacteristic(CONFIG_UUID);
+    chain = Promise.resolve();
+
+    setConnMsg(L('Đang xác thực PIN...', 'Checking PIN...'));
+    await writeCmd('auth:' + pin);
+
+    let ok = false, lockSec = 0;
+    for (let i = 0; i < 8; i++) {
+      await sleep(300);
+      const s = await readJson(chStatus);
+      if (s.auth) { ok = true; break; }
+      if (s.lock) { lockSec = s.lock; break; }
+    }
+
+    if (!ok) {
+      setConnMsg(lockSec
+        ? L('Sai PIN nhiều lần, thử lại sau ' + lockSec + ' giây', 'Too many wrong PINs, retry in ' + lockSec + 's')
+        : L('Sai PIN', 'Wrong PIN'), true);
+      try { bleDevice.gatt.disconnect(); } catch (e) {}
+      return;
+    }
+
+    connected = true;
+    try { localStorage.setItem('savedPin', pin); } catch (e) {}
+    fieldsLoaded = false;
+    lastStatusMsg = "";
+    await loadConfig();
+    await refresh();
+    showConnect(false);
+    startPolling();
+    showToast(L('✅ Đã kết nối xe', '✅ Connected'));
+  } catch (e) {
+    console.error(e);
+    if (e && e.name === 'NotFoundError') {
+      setConnMsg(L('Bạn chưa chọn thiết bị', 'No device selected'), true);
+    } else {
+      setConnMsg(L('Kết nối thất bại, thử lại. ', 'Connection failed, try again. ') + (e && e.message ? e.message : ''), true);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function onDisconnected() {
+  const was = connected;
+  connected = false;
+  pollGen++;
+  if (was) {
+    showConnect(true);
+    setConnMsg(L('Mất kết nối. Bấm Kết nối để thử lại.', 'Disconnected. Tap Connect to retry.'), true);
+  }
+}
+
+function disconnectBle() {
+  connected = false;
+  pollGen++;
+  try { if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect(); } catch (e) {}
+  toggleModal(false);
+  showConnect(true);
+  setConnMsg(i18n[currentLang].connHint, false);
+}
+
+function forceReauth() {
+  connected = false;
+  pollGen++;
+  try { bleDevice.gatt.disconnect(); } catch (e) {}
+  showConnect(true);
+  setConnMsg(L('Phiên đã hết hạn, nhập lại PIN', 'Session expired, enter PIN again'), true);
+}
+
+function startPolling() {
+  const g = ++pollGen;
+  (async () => {
+    while (g === pollGen && connected) {
+      await sleep(1500);
+      if (g !== pollGen || !connected) break;
+      await refresh();
+    }
+  })();
+}
+
+async function loadConfig() {
+  try {
+    const c = await readJson(chConfig);
+    if (c.auth) { cfg = c; renderConfig(c); }
+  } catch (e) { console.error('config', e); }
+}
+
+async function refresh() {
+  if (!connected) return;
+  try {
+    const d = await readJson(chStatus);
+    if (!d.auth) { forceReauth(); return; }
+    lastStatus = d;
+    renderStatus(d);
+  } catch (e) {
+    console.error('status', e);
+  }
+}
+
+// Gửi 1 lệnh (<= 20 ký tự). Sau đó đọc lại trạng thái + cấu hình.
+async function send(text, toastMsg, quiet) {
+  if (!connected) {
+    showToast(L('⚠️ Chưa kết nối thiết bị!', '⚠️ Not connected!'));
+    return false;
+  }
+  try {
+    await writeCmd(text);
+    if (toastMsg) showToast(toastMsg);
+    if (!quiet) {
+      setTimeout(async () => { await refresh(); await loadConfig(); }, 700);
+    }
+    return true;
+  } catch (e) {
+    console.error(e);
+    showToast(L('⚠️ Lỗi kết nối thiết bị!', '⚠️ Device error!'));
+    return false;
+  }
+}
+
+// ================== GIAO DIỆN ==================
+function toggleLang() {
+  currentLang = currentLang === 'vi' ? 'eng' : 'vi';
+  localStorage.setItem('lang', currentLang);
+  updateLanguageUI();
+  if (lastStatus) renderStatus(lastStatus);
+  if (cfg) renderConfig(cfg);
+}
+
+function toggleModal(show) {
+  document.getElementById('settingsModal').classList.toggle('active', show);
+}
+
+let alertTimeout = null;
+
+function triggerFindBike() {
+  send('find', i18n[currentLang].msgFinding);
+
+  const card = document.getElementById('alertCard');
+  const val = document.getElementById('gAlertValue');
+
+  card.classList.add('active-alert');
+  val.className = 'value danger';
+  val.innerText = i18n[currentLang].alertActive;
+
+  if (alertTimeout) clearTimeout(alertTimeout);
+  alertTimeout = setTimeout(() => {
+    card.classList.remove('active-alert');
+    val.className = 'value off';
+    val.innerText = i18n[currentLang].alertNormal;
+  }, 5000);
+}
+
+function renderStatus(d) {
+  const t = i18n[currentLang];
+
+  if (lastStatusMsg !== "" && d.msg && lastStatusMsg !== d.msg) {
+    showToast("📢 " + d.msg);
+  }
+  if (d.msg) lastStatusMsg = d.msg;
+
+  document.getElementById('gLock').innerHTML = d.unlocked
+    ? `<span class="on">${t.online}</span>` : `<span class="off">${t.offline}</span>`;
+
+  document.getElementById('gEngine').innerHTML = d.engine
+    ? '<span class="on">ON</span>' : '<span class="off">OFF</span>';
+
+  const vBatt = (d.vBatt !== undefined) ? d.vBatt : 12.6;
+  const vBattElem = document.getElementById('gVBatt');
+  vBattElem.innerText = vBatt.toFixed(1) + " V";
+  let powerWarnStr;
+  if (vBatt < 11.8) { vBattElem.className = "value danger"; powerWarnStr = t.powerLow; }
+  else if (vBatt < 12.2) { vBattElem.className = "value warn"; powerWarnStr = t.powerRecharge; }
+  else { vBattElem.className = "value on"; powerWarnStr = t.powerNormal; }
+  document.getElementById('gPowerType').innerText = `${t.powerBike} • ${powerWarnStr}`;
+
+  document.getElementById('gStand').innerHTML = d.standDown
+    ? `<span class="danger">${t.standDown}</span>` : `<span class="on">${t.standUp}</span>`;
+
+  document.getElementById('gFpStatus').innerHTML = d.fp
+    ? `<span class="on">${t.fpOk}</span>` : `<span class="danger">${t.fpErr}</span>`;
+
+  document.getElementById('gRfidStatus').innerHTML = d.rfid
+    ? `<span class="on">${t.rfidOk}</span>` : `<span class="danger">${t.rfidErr}</span>`;
+
+  document.getElementById('gRelayStatus').innerHTML = (d.starter || d.engine)
+    ? `<span class="on">${t.relayActive}</span>` : `<span class="off">${t.relayIdle}</span>`;
+
+  document.getElementById('gBleStatus').innerHTML = `<span class="on">${t.bleOk}</span>`;
+
+  if (d.alarm) {
+    document.getElementById('alertCard').classList.add('active-alert');
+    const val = document.getElementById('gAlertValue');
+    val.className = 'value danger';
+    val.innerText = t.alertActive;
+  }
+}
+
+function renderConfig(c) {
+  const t = i18n[currentLang];
+
+  const curOdo = c.odo || 0;
+  const oilRem = ((c.lastOilOdo || 0) + (c.oilKm || 0)) - curOdo;
+  document.getElementById('gOdo').innerText = `${curOdo} km`;
+  const oilRemElem = document.getElementById('gOilRem');
+  oilRemElem.innerText = `${oilRem} km`;
+  oilRemElem.className = oilRem <= 0 ? "value danger" : (oilRem <= 200 ? "value warn" : "value on");
+
+  const rfidContainer = document.getElementById('rfidContainer');
+  const cards = c.cards;
+  if (rfidContainer && Array.isArray(cards)) {
+    if (cards.length === 0) {
+      rfidContainer.innerHTML = `<div style="font-size:12px; color:var(--subtext); text-align:center; padding:6px;">${L('Chưa có thẻ nào được lưu', 'No RFID cards saved')}</div>`;
+    } else {
+      rfidContainer.innerHTML = cards.map((uid, idx) => `
+        <div class="contact-item">
+          <span style="font-size:13px; font-weight:600;">💳 STT #${idx}: ${uid}</span>
+          <button class="mini-btn" style="border-color:var(--pink); color:var(--pink);" onclick="deleteRfid(${idx})">${t.btnDelete}</button>
+        </div>
+      `).join('');
+    }
+  }
+
+  if (!fieldsLoaded) {
+    document.getElementById('bleNameInput').value = c.name || '';
+    document.getElementById('delaySec').value = c.delay || '';
+    document.getElementById('starterMs').value = c.starterMs || '';
+    document.getElementById('odoKmInput').value = c.odo !== undefined ? c.odo : '';
+    document.getElementById('oilLimitKm').value = c.oilKm || '';
+    document.getElementById('oilLimitDays').value = c.oilDays || '';
+    document.getElementById('oilDate').value = c.oilDate || '';
+    document.getElementById('serviceDate').value = c.servDate || '';
+    document.getElementById('airFilterDate').value = c.airDate || '';
+    fieldsLoaded = true;
+  }
+}
+
+// ================== HÀNH ĐỘNG ==================
+function deleteRfid(specificIndex) {
+  const rid = (specificIndex !== undefined) ? specificIndex : document.getElementById('rid').value;
+  if (rid === "" || rid === null) return;
+  send('delrfid:' + parseInt(rid, 10), i18n[currentLang].msgDelRfid + rid);
+}
+
+function saveOdo() {
+  const odo = parseInt(document.getElementById('odoKmInput').value, 10);
+  if (isNaN(odo) || odo < 0) { showToast(L('⚠️ Số KM không hợp lệ!', '⚠️ Invalid value!')); return; }
+  send('odo:' + odo, i18n[currentLang].msgSavedOdo);
+}
+
+function saveOilConfig() {
+  const km = parseInt(document.getElementById('oilLimitKm').value, 10);
+  const days = parseInt(document.getElementById('oilLimitDays').value, 10);
+  if (isNaN(km) || km <= 0 || isNaN(days) || days <= 0) {
+    showToast(L('⚠️ Nhập KM và số ngày hợp lệ!', '⚠️ Enter valid km and days!'));
+    return;
+  }
+  send('oil:' + km + ',' + days, i18n[currentLang].msgSavedOilConfig);
+}
+
+async function saveMaintenance() {
+  const oilD = document.getElementById('oilDate').value;
+  const servD = document.getElementById('serviceDate').value;
+  const airD = document.getElementById('airFilterDate').value;
+  const a = await send('mo:' + oilD, null, true);
+  const b = a && await send('ms:' + servD, null, true);
+  const c = b && await send('ma:' + airD, i18n[currentLang].msgSavedMaint, false);
+}
+
+function saveDelay() {
+  const sec = parseInt(document.getElementById('delaySec').value, 10);
+  if (isNaN(sec) || sec < 1 || sec > 30) { showToast(L('⚠️ Từ 1 đến 30 giây!', '⚠️ 1 to 30 seconds!')); return; }
+  send('delay:' + sec, i18n[currentLang].msgSavedDelay);
+}
+
+function saveStarterTime() {
+  const ms = parseInt(document.getElementById('starterMs').value, 10);
+  if (isNaN(ms) || ms < 500 || ms > 10000) {
+    showToast(L('⚠️ Thời gian đề từ 500 đến 10000 ms!', '⚠️ Starter time must be 500-10000 ms!'));
+    return;
+  }
+  send('starter:' + ms, i18n[currentLang].msgSavedStarter);
+}
+
+async function saveBleName() {
+  const name = document.getElementById('bleNameInput').value.trim();
+  if (name.length < 1 || name.length > 12) {
+    showToast(L('⚠️ Tên từ 1 đến 12 ký tự!', '⚠️ Name must be 1-12 chars!'));
+    return;
+  }
+  const ok = await send('name:' + name, L('🔄 Đã lưu tên, ESP32 đang khởi động lại...', '🔄 Saved, restarting...'), true);
+  if (ok) {
+    bleDevice = null;   // tên đổi -> phải chọn lại thiết bị
+    setTimeout(disconnectBle, 800);
+  }
+}
+
+async function savePin() {
+  const pin = document.getElementById('newPin').value.trim();
+  if (!/^\d{4,8}$/.test(pin)) { showToast(L('⚠️ PIN gồm 4-8 chữ số!', '⚠️ PIN must be 4-8 digits!')); return; }
+  const ok = await send('pin:' + pin, L('🔑 Đã đổi PIN!', '🔑 PIN changed!'), true);
+  if (ok) {
+    try { localStorage.setItem('savedPin', pin); } catch (e) {}
+    document.getElementById('pinInput').value = pin;
+    document.getElementById('newPin').value = '';
+  }
+}
+
+// ================== KHỞI TẠO ==================
+try { document.getElementById('pinInput').value = localStorage.getItem('savedPin') || ''; } catch (e) {}
+updateLanguageUI();
+if (!navigator.bluetooth) {
+  setConnMsg(L(
+    'Trình duyệt này không hỗ trợ Web Bluetooth. iPhone: mở trang bằng Bluefy. Android: dùng Chrome.',
+    'This browser has no Web Bluetooth. iPhone: open in Bluefy. Android: use Chrome.'), true);
+}
+
+</script>
+</body>
+</html>
