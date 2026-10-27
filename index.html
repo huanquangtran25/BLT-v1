@@ -459,6 +459,7 @@
     <div id="fpContainer" class="contact-container" style="margin-top: 8px; margin-bottom: 12px;"></div>
 
     <button class="btn btn-lock" data-i18n="clearFp" onclick="clearFps()">Xoá tất cả vân tay</button>
+    <button class="btn btn-find" data-i18n="btnLedTest" onclick="send('ledtest', i18n[currentLang].msgLedTest)">Thử màu đèn vân tay</button>
 
     <div class="section-title" data-i18n="rfidTitle">Thẻ RFID</div>
     <button class="btn btn-add" data-i18n="addRfid" onclick="send('addrfid', i18n[currentLang].msgAddRfid)">+ Thêm thẻ mới</button>
@@ -848,7 +849,9 @@ Object.assign(i18n.vi, {
   fpScanHint: "Đặt ngón tay lên cảm biến, nhấc ra khi đèn nháy xanh",
   msgFpCancel: "Đã huỷ đăng ký vân tay",
   msgFpClear: "🗑️ Đã gửi lệnh xoá tất cả vân tay",
-  confirmClearFp: "Xoá TẤT CẢ vân tay đã đăng ký?"
+  confirmClearFp: "Xoá TẤT CẢ vân tay đã đăng ký?",
+  btnLedTest: "Thử màu đèn vân tay",
+  msgLedTest: "💡 Đèn vân tay sẽ đổi màu lần lượt (mã 1 → 7), xem Serial Monitor"
 });
 Object.assign(i18n.eng, {
   standStatus: "Side Stand",
@@ -878,7 +881,9 @@ Object.assign(i18n.eng, {
   fpScanHint: "Place finger on the sensor, lift when the LED flashes green",
   msgFpCancel: "Fingerprint enrollment cancelled",
   msgFpClear: "🗑️ Delete-all fingerprints command sent",
-  confirmClearFp: "Delete ALL enrolled fingerprints?"
+  confirmClearFp: "Delete ALL enrolled fingerprints?",
+  btnLedTest: "Test fingerprint LED colors",
+  msgLedTest: "💡 The fingerprint LED will cycle colors (code 1 → 7), check the Serial Monitor"
 });
 
 const SERVICE_UUID = '7a1c0001-5b6e-4c1d-9a3e-2f6d8b4c1e01';
