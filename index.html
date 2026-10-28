@@ -487,6 +487,13 @@
       <button class="btn btn-add" data-i18n="btnSaveStarter" onclick="saveStarterTime()">Lưu thời gian đề</button>
     </div>
 
+    <div class="section-title" data-i18n="holdTitle">Thời gian giữ vân tay để đề</div>
+    <div class="wifi-block">
+      <span data-i18n="holdDesc">Giữ vân tay lâu hơn số ms này thì đề. Chạm ngắn hơn chỉ tính là chạm để khoá (3 lần chạm = khoá xe), không bao giờ đề. Từ 400 đến 3000.</span>
+      <input id="holdMs" type="number" min="400" max="3000" step="100" placeholder="Ví dụ: 800">
+      <button class="btn btn-add" data-i18n="btnSaveHold" onclick="saveHoldTime()">Lưu thời gian giữ</button>
+    </div>
+
     <div class="section-title" data-i18n="sleepTitle">Tự động ngủ nông</div>
     <div class="wifi-block">
       <span data-i18n="sleepDesc">Vào chế độ ngủ sau (giây) khi khoá xe và không dùng. 0 = tắt.</span>
@@ -841,6 +848,10 @@ Object.assign(i18n.vi, {
   sleepModeEco: "Tiết kiệm (vẫn phát Bluetooth)",
   sleepModeDeep: "Ngủ hẳn (chạm vân tay để đánh thức)",
   btnSaveSleep: "Lưu thời gian ngủ",
+  holdTitle: "Thời gian giữ vân tay để đề",
+  holdDesc: "Giữ vân tay lâu hơn số ms này thì đề. Chạm ngắn hơn chỉ tính là chạm để khoá (3 lần chạm = khoá xe), không bao giờ đề. Từ 400 đến 3000.",
+  btnSaveHold: "Lưu thời gian giữ",
+  msgSavedHold: "👆 Đã lưu thời gian giữ để đề!",
   msgSavedSleep: "😴 Đã lưu cài đặt ngủ nông!",
   cancelFp: "Huỷ đăng ký",
   clearFp: "Xoá tất cả vân tay",
@@ -873,6 +884,10 @@ Object.assign(i18n.eng, {
   sleepModeEco: "Eco (Bluetooth stays visible)",
   sleepModeDeep: "Deep (touch fingerprint to wake)",
   btnSaveSleep: "Save sleep time",
+  holdTitle: "Fingerprint hold time to start",
+  holdDesc: "Hold the fingerprint longer than this many ms to start the engine. Shorter touches only count as lock taps (3 taps = lock) and never start the engine. Range 400 to 3000.",
+  btnSaveHold: "Save hold time",
+  msgSavedHold: "👆 Hold time saved!",
   msgSavedSleep: "😴 Sleep setting saved!",
   cancelFp: "Cancel enrollment",
   clearFp: "Delete all fingerprints",
@@ -1240,6 +1255,7 @@ function renderConfig(c) {
     document.getElementById('bleNameInput').value = c.name || '';
     document.getElementById('delaySec').value = c.delay || '';
     document.getElementById('starterMs').value = c.starterMs || '';
+    document.getElementById('holdMs').value = c.holdMs || '';
     document.getElementById('sleepSec').value = (c.sleepSec !== undefined) ? c.sleepSec : '';
     document.getElementById('sleepMode').value = (c.sleepMode === 0) ? '0' : '1';
     document.getElementById('odoKmInput').value = c.odo !== undefined ? c.odo : '';
@@ -1327,6 +1343,15 @@ function saveStarterTime() {
     return;
   }
   send('starter:' + ms, i18n[currentLang].msgSavedStarter);
+}
+
+function saveHoldTime() {
+  const ms = parseInt(document.getElementById('holdMs').value, 10);
+  if (isNaN(ms) || ms < 400 || ms > 3000) {
+    showToast(L('⚠️ Thời gian giữ từ 400 đến 3000 ms!', '⚠️ Hold time must be 400-3000 ms!'));
+    return;
+  }
+  send('hold:' + ms, i18n[currentLang].msgSavedHold);
 }
 
 async function saveBleName() {
