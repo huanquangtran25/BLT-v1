@@ -1,1369 +1,1735 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>HQT Smart Lock</title>
-  <style>
-    :root {
-      --bg: #0b101d;
-      --card: rgba(21, 29, 46, 0.85);
-      --border: rgba(255, 255, 255, 0.12);
-      --text: #eef2f6;
-      --subtext: #8a97a8;
-      --green: #39ff6a;
-      --pink: #ff3b6f;
-      --cyan: #33e0ff;
-      --amber: #ffb020;
-      --blue: #2f9bff;
-      --purple: #a855f7;
-      --input-bg: #090d14;
-      --shadow: rgba(0,0,0,0.4);
-    }
+/*
+ * ESP32 - Khoa xe DIY phien ban BLE (RFID: PN532)
+ * - Mo khoa bang app (RFID tuy chon) + Van tay dieu khien dong co + Web Bluetooth (Bluefy)
+ *
+ * CU CHI VAN TAY (moi lan cham deu doi chieu van tay, den XANH LA = dung, DO = sai):
+ *   - Xe dang KHOA: cham dung van tay da dang ky       -> MO KHOA
+ *   - Xe da mo khoa: cham ngan 3 lan lien tiep          -> KHOA XE
+ *   - Xe da mo khoa: cham roi nhan giu (> holdMs, mac dinh 0.6 giay, chinh tren web 0.4-3 giay) -> RELAY DE chay trong luc giu (toi da 10 giay)
+ *     Cham ngan (< holdMs) chi tinh la 1 lan cham de khoa, khong bao gio kich de
+ *       + Chi van tay da dang ky moi duoc de / khoa
+ *       + Chua dang ky van tay nao (xe mo khoa tu app): cham gi cung duoc, den xanh duong
+ *       + Chan chong dang ha -> khong de
+ *
+ * DANG KY VAN TAY: quet 5 lan, moi lan quet thanh cong den van tay nhay xanh la + bip
+ *
+ * Giao thuc BLE (1 service, 3 characteristic):
+ *   CMD    (write)  : lenh dang chu "verb" hoac "verb:arg"
+ *   STATUS (read)   : JSON trang thai truc tiep
+ *   CONFIG (read)   : JSON cai dat + danh sach the RFID + danh sach van tay
+ *
+ * Lenh moi cho phan van tay:
+ *   addfp        : dang ky van tay moi (tu chon ID trong)
+ *   addfp:ID     : dang ky vao ID cu the (1..MAX_FP), ghi de neu da co
+ *   cancelfp     : huy dang ky dang chay
+ *   delfp:ID     : xoa 1 van tay
+ *   clrfp        : xoa tat ca van tay
+ * STATUS them: "fpAdd" (true/false), "fpStep" (so lan da quet thanh cong)
+ * CONFIG them: "fps":[1,2,...]
+ *
+ * Bao mat: moi lenh (tru "auth") bi bo qua cho den khi web gui "auth:<PIN>" dung.
+ * PIN mac dinh: 123456  -> NEN DOI NGAY trong phan Cai dat.
+ *
+ * Chon Partition Scheme: "Minimal SPIFFS (1.9MB APP with OTA)" hoac "Huge APP"
+ */
 
-    [data-theme="light"] {
-      --bg: #eef2f5;
-      --card: rgba(255, 255, 255, 0.88);
-      --border: rgba(0, 0, 0, 0.12);
-      --text: #1a202c;
-      --subtext: #4a5568;
-      --green: #10b981;
-      --pink: #ef4444;
-      --cyan: #0284c7;
-      --amber: #d97706;
-      --blue: #2563eb;
-      --purple: #8b5cf6;
-      --input-bg: #f1f5f9;
-      --shadow: rgba(0,0,0,0.1);
-    }
+// 1 = dung module RFID/NFC PN532, 0 = bo qua RFID (mo khoa bang nut tren app)
+#define USE_RFID 1
 
-    html, body {
-      width: 100%;
-      height: 100%;
-      overscroll-behavior-y: none;
-      overscroll-behavior-x: none;
-    }
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
-    * {
-      box-sizing: border-box;
-      transition: background 0.3s, color 0.3s, border-color 0.3s;
-    }
+#include <Adafruit_Fingerprint.h>
+#include <SPI.h>
+#if USE_RFID
+#include <Wire.h>
+#include <Adafruit_PN532.h>     // cai "Adafruit PN532" trong Library Manager (keo theo Adafruit BusIO)
+#endif
+#include <Preferences.h>
+#include <vector>
+#include <algorithm>
 
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      padding: 18px 14px 30px;
-      -webkit-tap-highlight-color: transparent;
-      position: relative;
-      overflow-x: hidden;
-    }
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
 
-    #snowCanvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: -1;
-      pointer-events: none;
-      touch-action: none;
-      transform: translate3d(0, 0, 0);
-      will-change: transform;
-    }
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
 
-    .settings-btn {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      cursor: pointer;
-      box-shadow: 0 4px 12px var(--shadow);
-      z-index: 100;
-      backdrop-filter: blur(8px);
-    }
-    .settings-btn:active { transform: scale(0.92); }
+// ============== MAU DEN LED CAM BIEN VAN TAY ==============
+// ZW101 dung ma mau theo bit: 1 = xanh duong, 2 = xanh la, 4 = do (3 = lo, 5 = tim, 6 = vang, 7 = trang).
+// Neu den len sai mau: bam "Thu mau den van tay" trong Cai dat, xem ma nao ra mau nao roi sua 3 dong duoi.
+#define LEDC_BLUE   1
+#define LEDC_GREEN  2
+#define LEDC_RED    4
+#ifndef FINGERPRINT_LED_BREATHING
+  #define FINGERPRINT_LED_BREATHING 0x01
+#endif
+#ifndef FINGERPRINT_LED_FLASHING
+  #define FINGERPRINT_LED_FLASHING 0x02
+#endif
+#ifndef FINGERPRINT_LED_ON
+  #define FINGERPRINT_LED_ON 0x03
+#endif
+#ifndef FINGERPRINT_LED_OFF
+  #define FINGERPRINT_LED_OFF 0x04
+#endif
 
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.65);
-      backdrop-filter: blur(6px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-    .modal-overlay.active { display: flex; }
+// ============== DINH NGHIA CHAN PHAN CUNG (giu nguyen) ================
+#define FINGER_RX        32
+#define FINGER_TX        33
 
-    .modal-content {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      width: 92%;
-      max-width: 450px;
-      max-height: 85vh;
-      overflow-y: auto;
-      padding: 20px;
-      box-shadow: 0 10px 30px var(--shadow);
-      position: relative;
-    }
+#define RFID_SS          5
+#define RFID_RST         4
+#define SPI_SCK          18
+#define SPI_MISO         19
+#define SPI_MOSI         23
 
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 10px;
-    }
-    .modal-header h2 { margin: 0; font-size: 18px; color: var(--cyan); }
-    .close-btn { font-size: 24px; cursor: pointer; color: var(--subtext); border: none; background: none; }
+// ---- PN532 ----
+// 1 = noi bang SPI (dung chan RFID_SS/SPI_* o tren), 0 = noi bang I2C (khuyen dung, it day nhat)
+// Cong tat DIP tren module: I2C = SW1 ON, SW2 OFF | SPI = SW1 OFF, SW2 ON (xem bang in tren module)
+#define PN532_USE_SPI    0
+// I2C dung chan chuan cua ESP32 (D21, D22), nam o canh phai board, xa chan van tay (D32, D33 o canh trai).
+// Neu dung SPI (PN532_USE_SPI 1) thi can doi lai chan, vi SPI chiem D5/D18/D19/D23.
+#define PN532_SDA        21     // I2C: SDA -> D21, SCL -> D22
+#define PN532_SCL        22
+#define PN532_IRQ        18     // IRQ -> D18 (nen noi, thu vien dung de biet module san sang)
+#define PN532_RESET      5      // RSTO -> D5 (tuy chon)
 
-    .header-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-top: 10px;
-      margin-bottom: 20px;
-      position: relative;
-      text-align: center;
-    }
-    .logo-wrapper {
-      position: relative;
-      width: 84px;
-      height: 84px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .logo-ring {
-      width: 78px;
-      height: 78px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(51,224,255,0.15) 0%, rgba(11,16,29,0) 70%);
-      border: 2px solid transparent;
-      background-image: linear-gradient(var(--card), var(--card)), 
-                        linear-gradient(135deg, var(--cyan), var(--blue), var(--purple));
-      background-origin: border-box;
-      background-clip: padding-box, border-box;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 20px rgba(51, 224, 255, 0.35);
-    }
-    .logo-wrapper::after {
-      content: '';
-      position: absolute;
-      width: 84px;
-      height: 84px;
-      border-radius: 50%;
-      border: 1.5px dashed var(--cyan);
-      opacity: 0.5;
-      animation: spinRing 12s linear infinite;
-    }
-    @keyframes spinRing { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+#define RELAY_STARTER    19   // KHONG dung GPIO16/17: UART2 mac dinh cua thu vien van tay chiem 2 chan nay luc khoi dong
+#define RELAY_POWER      26
+#define SIDESTAND_PIN    27   // LOW = chan chong dang ha
+#define BATTERY_ADC_PIN  34
+#define BUZZER_PIN       23   // doi khoi GPIO12 (chan strapping)
+#define ONBOARD_LED      2
 
-    .logo-text {
-      font-weight: 900;
-      font-size: 22px;
-      letter-spacing: 2px;
-      background: linear-gradient(180deg, #ffffff 0%, var(--cyan) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
-    }
-    .brand-wish {
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--subtext);
-      font-style: italic;
-      opacity: 0.9;
-      margin-top: 10px;
-      letter-spacing: 0.3px;
-      line-height: 1.4;
-    }
-
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px 14px;
-      backdrop-filter: blur(8px);
-    }
-    .card .label { font-size: 11px; color: var(--subtext); text-transform: uppercase; letter-spacing: 0.5px; }
-    .card .value { font-size: 16px; font-weight: 700; margin-top: 4px; }
-    .card-highlight { border-color: var(--amber); background: rgba(255, 176, 32, 0.08); }
-    
-    .card-alert {
-      grid-column: span 2;
-      border: 1px solid var(--border);
-      background: var(--card);
-      transition: all 0.3s ease;
-    }
-    .card-alert.active-alert {
-      border-color: var(--pink);
-      background: rgba(255, 59, 111, 0.15);
-      animation: alertPulse 1s infinite alternate;
-    }
-    @keyframes alertPulse {
-      0% { box-shadow: 0 0 5px rgba(255, 59, 111, 0.4); }
-      100% { box-shadow: 0 0 20px rgba(255, 59, 111, 0.9); }
-    }
-
-    .on { color: var(--green); }
-    .off { color: var(--subtext); }
-    .warn { color: var(--amber); }
-    .danger { color: var(--pink); }
-
-    .btn {
-      display: block; width: 100%; padding: 15px; margin: 10px 0; border-radius: 14px;
-      font-size: 15px; font-weight: 700; background: var(--card); cursor: pointer;
-      backdrop-filter: blur(6px); letter-spacing: 0.3px; border: 1.5px solid var(--border);
-    }
-    .btn:active { transform: scale(0.97); }
-    .btn-unlock { border-color: var(--green); color: var(--green); }
-    .btn-lock { border-color: var(--pink); color: var(--pink); }
-    .btn-start { border-color: var(--cyan); color: var(--cyan); }
-    .btn-find { border-color: var(--purple); color: var(--purple); }
-    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .btn-add { border-color: var(--amber); color: var(--amber); }
-
-    .section-title {
-      margin: 18px 0 10px; font-size: 12px; color: var(--subtext); text-transform: uppercase;
-      letter-spacing: 1px; border-bottom: 1px solid var(--border); padding-bottom: 6px;
-    }
-    .mgmt-row {
-      display: flex; align-items: center; gap: 10px; background: var(--card);
-      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
-    }
-    .mgmt-row span { flex: 1; font-size: 14px; color: var(--text); }
-    .mgmt-row input {
-      width: 70px; padding: 8px; text-align: center; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--input-bg); color: var(--text);
-    }
-    .mini-btn { border: 1.5px solid var(--amber); color: var(--amber); background: transparent; border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
-    .copy-btn { border-color: var(--cyan); color: var(--cyan); }
-    
-    .wifi-block {
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-      padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;
-    }
-    .wifi-block input {
-      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--input-bg); color: var(--text); font-size: 14px;
-    }
-
-    .switch-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 12px; background: var(--input-bg); border-radius: 12px; margin-bottom: 10px;
-    }
-
-    .contact-container {
-      display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
-    }
-    .contact-item {
-      display: flex; align-items: center; justify-content: space-between;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px;
-    }
-    .contact-link {
-      text-decoration: none; font-size: 13px; font-weight: 600; color: var(--cyan); flex: 1;
-    }
-
-    #toastContainer {
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
-      width: 90%; max-width: 360px; pointer-events: none;
-    }
-    .toast {
-      background: var(--card); border: 1.5px solid var(--cyan); color: var(--text);
-      padding: 14px 18px; border-radius: 16px; font-size: 14px; font-weight: 600;
-      box-shadow: 0 10px 25px var(--shadow); backdrop-filter: blur(12px);
-      text-align: center; pointer-events: auto;
-      animation: fadeInDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fadeOut 0.4s ease 2.6s forwards;
-    }
-    @keyframes fadeInDown {
-      from { opacity: 0; transform: translateY(-20px) scale(0.9); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    @keyframes fadeOut {
-      from { opacity: 1; transform: translateY(0) scale(1); }
-      to { opacity: 0; transform: translateY(-10px) scale(0.9); }
-    }
-
-    footer { margin-top: 25px; text-align: center; font-size: 12px; color: var(--subtext); line-height: 1.5; }
-    footer hr { border: none; border-top: 1px solid var(--border); margin-bottom: 12px; }
-
-    .conn-input {
-      width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
-      background: var(--input-bg); color: var(--text); font-size: 20px;
-      text-align: center; letter-spacing: 6px; margin: 10px 0;
-    }
-    #connMsg { font-size: 13px; color: var(--subtext); line-height: 1.5; text-align: center; margin: 8px 0 4px; }
-    .conn-title { margin: 14px 0 0; text-align: center; font-size: 18px; color: var(--cyan); }
-    .btn:disabled { opacity: 0.5; }
-  </style>
-</head>
-<body>
-
-<canvas id="snowCanvas"></canvas>
-<div id="toastContainer"></div>
-
-<div class="modal-overlay active" id="connectModal">
-  <div class="modal-content">
-    <div class="header-container" style="margin-bottom:0;">
-      <div class="logo-wrapper"><div class="logo-ring"><span class="logo-text">HQT</span></div></div>
-    </div>
-    <h2 class="conn-title" data-i18n="connTitle">Kết nối xe</h2>
-    <div id="connMsg" data-i18n="connHint">Bật Bluetooth, đứng gần xe, nhập PIN rồi bấm Kết nối.</div>
-    <input id="pinInput" class="conn-input" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off">
-    <button id="connectBtn" class="btn btn-start" data-i18n="btnConnect" onclick="connectBle()">🔵 KẾT NỐI BLUETOOTH</button>
-  </div>
-</div>
-
-<button class="settings-btn" onclick="toggleModal(true)">⚙️</button>
-
-<div class="header-container">
-  <div class="logo-wrapper">
-    <div class="logo-ring">
-      <span class="logo-text">HQT</span>
-    </div>
-  </div>
-  <div class="brand-wish">chúc bạn có một trải nghiệm đáng để trải nghiệm :)))</div>
-</div>
-
-<div class="grid">
-  <div class="card card-alert" id="alertCard">
-    <div class="label" data-i18n="alertLabel">Cảnh báo hệ thống</div>
-    <div class="value off" id="gAlertValue">BÌNH THƯỜNG</div>
-  </div>
-
-  <div class="card"><div class="label" data-i18n="sys">Hệ thống</div><div class="value on">ONLINE</div></div>
-  <div class="card"><div class="label" data-i18n="lockStatus">Trạng thái khoá</div><div class="value" id="gLock">--</div></div>
-  <div class="card"><div class="label" data-i18n="engineStatus">Khởi động máy</div><div class="value" id="gEngine">--</div></div>
-  
-  <div class="card">
-    <div class="label" data-i18n="vBattLabel">Ắc Quy & Nguồn</div>
-    <div class="value on" id="gVBatt">-- V</div>
-    <div style="font-size: 10px; color: var(--subtext); margin-top: 2px;" id="gPowerType">--</div>
-  </div>
-
-  <div class="card"><div class="label" data-i18n="standStatus">Chân chống</div><div class="value on" id="gStand">--</div></div>
-  <div class="card"><div class="label" data-i18n="odometerLabel">Quãng đường đã đi</div><div class="value on" id="gOdo">0 km</div></div>
-  
-  <div class="card card-highlight">
-    <div class="label" data-i18n="oilRemLabel">KM thay dầu còn lại</div>
-    <div class="value warn" id="gOilRem">-- km</div>
-  </div>
-</div>
-
-<div class="section-title" data-i18n="diagnosticsTitle">Chẩn đoán ngoại vi & Hệ thống</div>
-<div class="grid">
-  <div class="card">
-    <div class="label" data-i18n="fpDiagLabel">Vân tay ZW101</div>
-    <div class="value" id="gFpStatus">--</div>
-  </div>
-  <div class="card">
-    <div class="label" data-i18n="rfidDiagLabel">Thẻ RFID</div>
-    <div class="value" id="gRfidStatus">--</div>
-  </div>
-  <div class="card">
-    <div class="label" data-i18n="relayDiagLabel">Rơ-le (Khóa/Đề)</div>
-    <div class="value" id="gRelayStatus">--</div>
-  </div>
-  <div class="card">
-    <div class="label" data-i18n="bleDiagLabel">Bluetooth</div>
-    <div class="value" id="gBleStatus">--</div>
-  </div>
-</div>
-
-<button class="btn btn-find" data-i18n="btnFind" onclick="triggerFindBike()">🔔 TÌM XE TRONG BÃI</button>
-<button class="btn btn-unlock" data-i18n="btnUnlock" onclick="send('unlock', i18n[currentLang].msgUnlocked)">CHO PHÉP HOẠT ĐỘNG (MỞ KHOÁ)</button>
-
-<div class="btn-row">
-  <button class="btn btn-start" data-i18n="btnStart" onclick="send('start', i18n[currentLang].msgStarter)">NHẤN ĐỂ ĐỀ 🚀</button>
-  <button class="btn btn-lock" data-i18n="btnLock" onclick="send('lock', i18n[currentLang].msgLocked)">NGỪNG HOẠT ĐỘNG (KHOÁ)</button>
-</div>
-
-<div class="modal-overlay" id="settingsModal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 data-i18n="settingsTitle">Cài Đặt Hệ Thống</h2>
-      <button class="close-btn" onclick="toggleModal(false)">&times;</button>
-    </div>
-
-    <div class="switch-row">
-      <span data-i18n="themeLabel">Giao diện</span>
-      <button class="mini-btn" id="themeBtn" onclick="toggleTheme()">🌙 Tối</button>
-    </div>
-
-    <div class="switch-row">
-      <span data-i18n="langLabel">Ngôn ngữ</span>
-      <button class="mini-btn" id="langBtn" onclick="toggleLang()">🌐 VI</button>
-    </div>
-
-    <!-- TÙY CHỌN NHỊP ĐIỆU CÒI TÌM XE -->
-    <div class="section-title" data-i18n="findMelodyTitle">Nhịp điệu còi tìm xe</div>
-    <div class="wifi-block">
-      <span data-i18n="findMelodyDesc">Chọn kiểu nhịp điệu còi hú tìm xe</span>
-      <select id="findMelodySelect" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); font-size:14px; margin-bottom:8px;">
-        <option value="0">Tiêu chuẩn - Dồn dập (Sport)</option>
-        <option value="1">Vui nhộn - Tít bíp ngắn</option>
-        <option value="2">VIP Cao cấp - Sang trọng</option>
-      </select>
-      <button class="btn btn-add" data-i18n="btnSaveMelody" onclick="saveFindMelody()">Lưu nhịp điệu còi</button>
-    </div>
-
-    <div class="section-title" data-i18n="odoConfigTitle">Cập nhật công-tơ-mét</div>
-    <div class="wifi-block">
-      <span data-i18n="odoDesc">Số KM hiện tại trên đồng hồ xe</span>
-      <input id="odoKmInput" type="number" placeholder="Ví dụ: 12500">
-      <button class="btn btn-add" data-i18n="btnSaveOdo" onclick="saveOdo()">Cập nhật Odometer</button>
-    </div>
-
-    <div class="section-title" data-i18n="oilConfigTitle">Cài đặt định mức thay dầu</div>
-    <div class="wifi-block">
-      <span data-i18n="oilKmDesc">Số KM mỗi lần thay dầu (Km)</span>
-      <input id="oilLimitKm" type="number" placeholder="Ví dụ: 1500">
-      <span data-i18n="oilDaysDesc">Số ngày định kỳ thay dầu (Ngày)</span>
-      <input id="oilLimitDays" type="number" placeholder="Ví dụ: 90">
-      <button class="btn btn-add" data-i18n="btnSaveOilConfig" onclick="saveOilConfig()">Lưu định mức thay dầu</button>
-    </div>
-
-    <div class="section-title" data-i18n="maintTitle">Lịch bảo dưỡng & Thay thế</div>
-    <div class="wifi-block">
-      <span data-i18n="oilDateLabel">🛢️ Ngày thay dầu máy gần nhất:</span>
-      <input id="oilDate" type="date">
-      
-      <span data-i18n="serviceDateLabel">🛠️ Ngày bảo dưỡng xe gần nhất:</span>
-      <input id="serviceDate" type="date">
-      
-      <span data-i18n="airFilterDateLabel">🌬️ Ngày thay lọc gió gần nhất:</span>
-      <input id="airFilterDate" type="date">
-
-      <button class="btn btn-add" data-i18n="btnSaveMaint" onclick="saveMaintenance()">Lưu nhật ký bảo dưỡng</button>
-    </div>
-
-    <div class="section-title" data-i18n="fpTitle">Vân tay ZW101</div>
-    <div id="fpProgress" class="wifi-block" style="display:none; border-color:var(--green);">
-      <span id="fpProgressText" style="font-weight:700; color:var(--green);"></span>
-      <div style="height:8px; background:var(--input-bg); border-radius:6px; overflow:hidden;">
-        <div id="fpProgressBar" style="height:100%; width:0%; background:var(--green); transition:width 0.3s;"></div>
-      </div>
-      <button class="btn btn-lock" style="margin:4px 0 0;" data-i18n="cancelFp" onclick="cancelFp()">Huỷ đăng ký</button>
-    </div>
-    <button class="btn btn-add" id="addFpBtn" data-i18n="addFp" onclick="addFingerprint()">+ Thêm vân tay mới</button>
-
-    <div id="fpContainer" class="contact-container" style="margin-top: 8px; margin-bottom: 12px;"></div>
-
-    <button class="btn btn-lock" data-i18n="clearFp" onclick="clearFps()">Xoá tất cả vân tay</button>
-
-    <div class="section-title" data-i18n="rfidTitle">Thẻ RFID</div>
-    <button class="btn btn-add" data-i18n="addRfid" onclick="send('addrfid', i18n[currentLang].msgAddRfid)">+ Thêm thẻ mới</button>
-    
-    <div id="rfidContainer" class="contact-container" style="margin-top: 8px; margin-bottom: 12px;"></div>
-
-    <div class="mgmt-row">
-      <span data-i18n="delRfid">Xoá thẻ theo STT</span>
-      <input id="rid" type="number" min="0">
-      <button class="mini-btn" data-i18n="btnDelete" onclick="deleteRfid()">Xoá</button>
-    </div>
-
-    <div class="section-title" data-i18n="delayTitle">Thời gian chờ trước khi đề</div>
-    <div class="wifi-block">
-      <span data-i18n="delayDesc">Số giây chờ sau khi mở khoá</span>
-      <input id="delaySec" type="number" min="1" max="30">
-      <button class="btn btn-add" data-i18n="btnSaveDelay" onclick="saveDelay()">Lưu thời gian chờ</button>
-    </div>
-
-    <!-- Cài đặt thời gian đề nổ (ms) từ 0.5s trở lên -->
-    <div class="section-title" data-i18n="starterTimeTitle">Cài đặt thời gian đề nổ</div>
-    <div class="wifi-block">
-      <span data-i18n="starterTimeDesc">Thời gian kích Relay đề (ms, tối thiểu 500)</span>
-      <input id="starterMs" type="number" min="500" step="100" placeholder="Ví dụ: 1500">
-      <button class="btn btn-add" data-i18n="btnSaveStarter" onclick="saveStarterTime()">Lưu thời gian đề</button>
-    </div>
-
-    <div class="section-title" data-i18n="sleepTitle">Tự động ngủ nông</div>
-    <div class="wifi-block">
-      <span data-i18n="sleepDesc">Vào chế độ ngủ sau (giây) khi khoá xe và không dùng. 0 = tắt.</span>
-      <select id="sleepMode" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); font-size:14px;">
-        <option value="1" data-i18n="sleepModeEco">Tiết kiệm (vẫn phát Bluetooth)</option>
-        <option value="0" data-i18n="sleepModeDeep">Ngủ hẳn (chạm vân tay để đánh thức)</option>
-      </select>
-      <input id="sleepSec" type="number" min="0" max="3600" placeholder="Ví dụ: 120">
-      <button class="btn btn-add" data-i18n="btnSaveSleep" onclick="saveSleep()">Lưu thời gian ngủ</button>
-    </div>
-
-    <div class="section-title" data-i18n="wifiTitle">Cài đặt Bluetooth</div>
-    <div class="wifi-block">
-      <span data-i18n="bleNameDesc">Tên Bluetooth (tối đa 12 ký tự)</span>
-      <input id="bleNameInput" type="text" maxlength="12">
-      <button class="btn btn-add" data-i18n="btnSaveBleName" onclick="saveBleName()">Lưu tên &amp; Khởi động lại</button>
-    </div>
-    <div class="wifi-block">
-      <span data-i18n="pinDesc">Đổi PIN (4-8 chữ số)</span>
-      <input id="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••••">
-      <button class="btn btn-add" data-i18n="btnSavePin" onclick="savePin()">Lưu PIN mới</button>
-    </div>
-    <button class="btn btn-lock" data-i18n="btnDisconnect" onclick="disconnectBle()">Ngắt kết nối</button>
-
-    <div class="section-title" data-i18n="contactTitle">Liên hệ hỗ trợ</div>
-    <div class="contact-container">
-      <div class="contact-item">
-        <a class="contact-link" href="https://zalo.me/0375354596" target="_blank">💬 Zalo: 0375354596</a>
-        <button class="mini-btn copy-btn" onclick="copyToClipboard('0375354596', '📋 Đã sao chép SĐT Zalo!')">📋 Copy</button>
-      </div>
-      <div class="contact-item">
-        <a class="contact-link" href="https://facebook.com/huanquangtran25" target="_blank">🌐 Facebook: HuanQuangTran</a>
-        <button class="mini-btn copy-btn" onclick="copyToClipboard('https://facebook.com/huanquangtran25', '📋 Đã sao chép Link Facebook!')">📋 Copy</button>
-      </div>
-      <div class="contact-item">
-        <a class="contact-link" href="mailto:huanmomk5@gmail.com">✉️ Email Support</a>
-        <button class="mini-btn copy-btn" onclick="copyToClipboard('huanmomk5@gmail.com', '📋 Đã sao chép Email!')">📋 Copy</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<footer>
-  <hr>
-  © 2026 Huân Quang Trần. Bản quyền phần mềm thuộc về tác giả.<br>
-  Hân hạnh được phục vụ mọi người.
-</footer>
-
-<script>
-function showToast(message) {
-  if (!message) return;
-  const container = document.getElementById('toastContainer');
-  const toast = document.createElement('div');
-  toast.className = 'toast';
-  toast.innerText = message;
-  container.appendChild(toast);
-  setTimeout(() => { toast.remove(); }, 3000);
+// ---- COI ----
+// 1 = coi CHU DONG (active, cap dien la tu keu, 1 cao do co dinh) - loai "buzzer" 5V pho bien
+// 0 = coi THU DONG (passive, can xung tan so de keu)
+// Thu: noi coi truc tiep vao 5V + GND, neu tu keu lien tuc la loai chu dong.
+#define BUZZER_ACTIVE    1
+// Muc tin hieu lam coi keu: HIGH (coi/transistor thuong) hoac LOW (module coi kich muc thap)
+#define BUZZER_ON_LEVEL  HIGH
+static inline void buzzOn(uint16_t freq) {
+#if BUZZER_ACTIVE
+  (void)freq;
+  digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL);
+#else
+  tone(BUZZER_PIN, freq);
+#endif
 }
-
-function copyToClipboard(text, successMsg) {
-  if (!text) {
-    showToast("⚠️ Không có nội dung để sao chép!");
-    return;
-  }
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast(successMsg || "📋 Đã sao chép vào bộ nhớ tạm!");
-    }).catch(() => {
-      fallbackCopyText(text, successMsg);
-    });
-  } else {
-    fallbackCopyText(text, successMsg);
-  }
+static inline void buzzOff() {
+#if BUZZER_ACTIVE
+  digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL);
+#else
+  noTone(BUZZER_PIN);
+#endif
 }
+#define LED_D2_PIN       ONBOARD_LED
 
-function fallbackCopyText(text, successMsg) {
-  const textArea = document.createElement("textarea");
-  textArea.value = text;
-  textArea.style.position = "fixed";
-  textArea.style.left = "-9999px";
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-  try {
-    document.execCommand('copy');
-    showToast(successMsg || "📋 Đã sao chép vào bộ nhớ tạm!");
-  } catch (err) {
-    showToast("❌ Sao chép thất bại!");
+#define RELAY_ON   HIGH
+#define RELAY_OFF  LOW
+
+// ============== BLE UUID (phai trung voi trang web) ================
+#define SERVICE_UUID "7a1c0001-5b6e-4c1d-9a3e-2f6d8b4c1e01"
+#define CMD_UUID     "7a1c0002-5b6e-4c1d-9a3e-2f6d8b4c1e01"
+#define STATUS_UUID  "7a1c0003-5b6e-4c1d-9a3e-2f6d8b4c1e01"
+#define CONFIG_UUID  "7a1c0004-5b6e-4c1d-9a3e-2f6d8b4c1e01"
+
+#define CMD_LEN        40
+#define MAX_RFID_CARDS 12
+
+// ============== NGU NONG (LIGHT SLEEP) ================
+// Noi chan TOUCH OUT / WAKEUP cua ZW101 (muc CAO khi co ngon tay cham) vao GPIO nay.
+// Phai la chan RTC con trong (13, 14, 15, 35, 36, 39). Mac dinh GPIO13.
+#define FP_WAKE_PIN          13
+// 1 = sau khi thuc day tu khoi dong lai (BLE len lai sach se, on dinh, mat ~1 giay)
+// 0 = chay tiep ngay tai cho va bat lai BLE (nhanh hon nhung co the khong on dih tuy phien ban core)
+#define SLEEP_WAKE_RESTART   1
+// RC522 khong danh thuc duoc ESP32 -> tat tu dong ngu khi dung RFID
+#define SLEEP_ENABLED        (!USE_RFID)
+#define SLEEP_MIN_SEC        30
+#define SLEEP_MAX_SEC        3600
+
+// ============== THAM SO VAN TAY ================
+#define MAX_FP              20      // so van tay toi da
+#define FP_ENROLL_SCANS     5       // so lan quet khi dang ky
+#define FP_ENROLL_TIMEOUT   20000UL // ms cho moi lan quet
+#define FP_HOLD_START_MS    600     // MAC DINH: giu lau hon thoi gian nay -> de (chinh duoc tren web)
+#define FP_HOLD_MIN_MS      400     // gioi han duoi (tranh cham 3 lan bi nham thanh de)
+#define FP_HOLD_MAX_CFG_MS  3000    // gioi han tren cua cai dat
+#define FP_HOLD_MAX_MS      10000UL // gioi han an toan: de toi da 10 giay
+#define FP_TAP_MIN_MS       30      // cham ngan toi thieu
+#define FP_TAP_GAP_MS       1500    // khoang cach toi da giua 2 lan cham
+#define FP_TAPS_TO_LOCK     3
+#define FP_RELEASE_DEBOUNCE 150     // ms mat tin hieu (NOFINGER) moi coi la nha tay
+#define FP_ERR_GRACE        400     // ms bo qua loi doc tam thoi khi dang giu tay
+
+// ============== DOI TUONG & BIEN TOAN CUC ================
+HardwareSerial fingerSerial(2);
+Adafruit_Fingerprint finger(&fingerSerial);
+#if USE_RFID
+#if PN532_USE_SPI
+Adafruit_PN532 nfc(RFID_SS, &SPI);
+#else
+Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET, &Wire);
+#endif
+#endif
+Preferences prefs;
+
+std::vector<String> validRfidUIDs;
+std::vector<uint16_t> fpIds;        // danh sach ID van tay da dang ky (luu trong flash)
+
+bool isUnlocked = false;
+bool isEngineRunning = false;
+bool isAlarmActive = false;
+bool fpConnected = false;
+bool rfidOk = true;
+String lastStatusMsg = "He thong san sang";
+
+// Cai dat luu trong flash
+String bleName = "HQT-KhoaXe";
+String blePin = "123456";
+uint32_t starterTimeMs = 1500;
+uint32_t holdStartMs = FP_HOLD_START_MS;   // thoi gian giu van tay truoc khi de
+uint32_t delaySec = 3;
+uint32_t odometerKm = 0;
+uint32_t oilLimitKm = 1500;
+uint32_t oilLimitDays = 90;
+uint32_t lastOilOdo = 0;
+String oilDate = "";
+String servDate = "";
+String airDate = "";
+uint8_t findMelodyMode = 0;     // 10 chế độ còi tìm xe (0 - 9)
+uint8_t findRepeatTimes = 5;    // Số lần lặp lại còi (5 - 50)
+
+bool isAddingRfid = false;
+unsigned long rfidAddTimer = 0;
+
+unsigned long lastFingerLedTime = 0;
+bool fingerLedNeedsReset = false;
+unsigned long lastDebugPrintTime = 0;
+unsigned long lastFingerPressTime = 0;
+bool lastFingerState = false;
+unsigned long lastRfidCheckTime = 0;
+
+// --- Cu chi van tay ---
+unsigned long lastFingerSeen = 0;
+unsigned long lastTapRelease = 0;
+uint8_t tapCount = 0;
+bool holdDenied = false;
+bool holdStarted = false;
+bool touchActive = false;        // dang co ngon tay tren cam bien
+bool touchOwner = false;         // lan cham nay la van tay da dang ky
+bool touchWaitRelease = false;   // da xu ly xong (vd vua mo khoa) -> cho nha tay roi moi tinh tiep
+bool touchPoor = false;          // anh kem -> thu doi chieu lai trong cung lan cham
+uint8_t touchTries = 0;
+unsigned long touchStart = 0;
+unsigned long holdBase = 0;      // moc tinh thoi gian giu: SAU khi doi chieu van tay xong (doi chieu mat ~0.3-0.5s)
+unsigned long lastVerifyMs = 0;
+bool fpNeedRelease = false;      // sau khi dang ky xong: cho nhac tay ra roi moi nhan cham
+
+// --- Den LED van tay ---
+unsigned long ledOffAt = 0;
+uint8_t ledLastCode = 0xFE;
+uint8_t ledTestCode = 0;
+unsigned long ledTestNext = 0;
+
+// --- Dang ky van tay ---
+bool fpEnrolling = false;
+uint8_t fpStep = 0;          // so lan quet da thanh cong
+uint8_t fpPhase = 0;         // 0 = cho dat tay, 1 = cho nhac tay ra
+uint8_t fpFailCount = 0;
+uint16_t fpEnrollId = 0;
+unsigned long fpStepTimer = 0;
+
+// --- BLE ---
+BLEServer* pServer = nullptr;
+BLECharacteristic* chCmd = nullptr;
+BLECharacteristic* chStatus = nullptr;
+BLECharacteristic* chConfig = nullptr;
+
+volatile bool bleConnected = false;
+volatile bool bleAuthed = false;
+volatile bool configDirty = true;
+volatile unsigned long restartAdvAt = 0;
+uint8_t authFails = 0;
+unsigned long authLockUntil = 0;
+bool lastAuthState = false;
+unsigned long lastStatusUpdate = 0;
+
+QueueHandle_t cmdQueue = nullptr;
+
+// --- Tu dong ngu ---
+uint32_t sleepSec = 120;          // 0 = tat tu dong ngu
+unsigned long lastActivityMs = 0;
+uint8_t sleepMode = 1;            // 1 = tiet kiem (van phat BLE), 0 = ngu hang (tat BLE, cham van tay de thuc)
+bool ecoActive = false;
+uint32_t normalCpuMhz = 240;
+
+// ============== PROTOTYPES ================
+void loadAllSettings();
+void saveAllSettings();
+void setFingerLED(uint8_t control, uint8_t speed, uint8_t color, uint8_t count = 0);
+void blinkLedD2(int times, int delayMs = 30);
+void beepBuzzer(uint16_t freq, uint16_t duration, uint8_t count = 1);
+void playFindBikeMelodyCustom(uint8_t mode, uint8_t repeatTimes);
+void triggerFindBike();
+void startBLE();
+void unlockBike();
+void lockBike();
+void startEngineTimerMode();
+bool isFingerPressed();
+void handleRFIDReader();
+void handleFingerprintLogic();
+void handleFpEnroll();
+void startFpEnroll(int reqId);
+void cancelFpEnroll(const char *msg);
+bool fpHasId(uint16_t id);
+int8_t fpIdentifyCurrent();
+void fpOnTouchStart();
+void fpSyncFromModule();
+uint8_t zwLed(uint8_t mode, uint8_t startColor, uint8_t endColor, uint8_t loops);
+void ledOff();
+void ledSolid(uint8_t color, uint16_t ms);
+void ledBlink(uint8_t color, uint8_t times, uint16_t onMs = 180, uint16_t offMs = 180, uint16_t beepFreq = 0);
+void ledService();
+#if USE_RFID
+String uidToString(const uint8_t *uid, uint8_t len);
+bool pn532Init();
+#endif
+void printSystemStatusToSerial();
+void resetFingerLED();
+void hardResetRFID();
+void checkAndResetRfidModule();
+float readBatteryVolt();
+void processCommand(const String &c);
+void updateStatusChar();
+void updateConfigChar();
+void handleAuth(const String &pin);
+String jsonEscape(const String &s);
+bool isDateStr(const String &s);
+void checkAutoSleep();
+void enterLightSleep();
+void enterEco();
+void exitEco();
+
+// ============== BLE CALLBACKS ================
+class ServerCb : public BLEServerCallbacks {
+  void onConnect(BLEServer*) override {
+    bleConnected = true;
+    bleAuthed = false;
+    configDirty = true;
   }
-  document.body.removeChild(textArea);
-}
-
-const i18n = {
-  vi: {
-    alertLabel: "Cảnh báo hệ thống",
-    alertNormal: "BÌNH THƯỜNG",
-    alertActive: "🚨 ĐANG PHÁT TÍN HIỆU CẢNH BÁO!",
-    sys: "Hệ thống",
-    lockStatus: "Trạng thái khoá",
-    engineStatus: "Khởi động máy",
-    vBattLabel: "Nguồn & Ắc Quy",
-    gearStatus: "Số hiện tại",
-    odometerLabel: "Quãng đường đã đi",
-    oilRemLabel: "KM thay dầu còn lại",
-    diagnosticsTitle: "Chẩn đoán ngoại vi & Hệ thống",
-    fpDiagLabel: "Vân tay ZW101",
-    rfidDiagLabel: "Thẻ RFID",
-    relayDiagLabel: "Rơ-le (Khóa/Đề)",
-    gearDiagLabel: "Cảm biến Số (Gear/N)",
-    btnFind: "🔔 TÌM XE TRONG BÃI",
-    btnUnlock: "CHO PHÉP HOẠT ĐỘNG (MỞ KHOÁ)",
-    btnStart: "NHẤN ĐỂ ĐỀ 🚀",
-    btnLock: "NGỪNG HOẠT ĐỘNG (KHOÁ)",
-    settingsTitle: "Cài Đặt Hệ Thống",
-    themeLabel: "Giao diện",
-    langLabel: "Ngôn ngữ",
-    odoConfigTitle: "Cập nhật công-tơ-mét",
-    odoDesc: "Số KM hiện tại trên đồng hồ xe",
-    btnSaveOdo: "Cập nhật Odometer",
-    oilConfigTitle: "Cài đặt định mức thay dầu",
-    oilKmDesc: "Số KM mỗi lần thay dầu (Km)",
-    oilDaysDesc: "Số ngày định kỳ thay dầu (Ngày)",
-    btnSaveOilConfig: "Lưu định mức thay dầu",
-    maintTitle: "Lịch bảo dưỡng & Thay thế",
-    oilDateLabel: "🛢️ Ngày thay dầu máy gần nhất:",
-    serviceDateLabel: "🛠️ Ngày bảo dưỡng xe gần nhất:",
-    airFilterDateLabel: "🌬️ Ngày thay lọc gió gần nhất:",
-    btnSaveMaint: "Lưu nhật ký bảo dưỡng",
-    fpTitle: "Vân tay ZW101",
-    addFp: "+ Thêm vân tay mới",
-    delFp: "Xoá vân tay theo ID",
-    rfidTitle: "Thẻ RFID",
-    addRfid: "+ Thêm thẻ mới",
-    delRfid: "Xoá thẻ theo STT",
-    delayTitle: "Thời gian chờ trước khi đề",
-    delayDesc: "Số giây chờ sau khi mở khoá",
-    btnSaveDelay: "Lưu thời gian chờ",
-    starterTimeTitle: "Cài đặt thời gian đề nổ",
-    starterTimeDesc: "Thời gian kích Relay đề (ms, tối thiểu 500)",
-    btnSaveStarter: "Lưu thời gian đề",
-    wifiTitle: "Cài đặt WiFi AP",
-    wifiSsid: "Tên WiFi (SSID)",
-    wifiPass: "Mật khẩu mới (tối thiểu 8 ký tự)",
-    btnSaveWifi: "Lưu WiFi & Đặt lại",
-    contactTitle: "Liên hệ hỗ trợ",
-    btnDelete: "Xoá",
-    online: "ONLINE",
-    offline: "OFFLINE",
-    powerBike: "Ắc quy xe",
-    powerUsb: "USB 5V",
-    powerNormal: "Bình thường",
-    powerRecharge: "Nhắc sạc",
-    powerLow: "Yếu điện",
-    fpOk: "OK",
-    fpErr: "Lỗi kết nối",
-    rfidOk: "Hoạt động",
-    rfidErr: "Sự cố",
-    relayActive: "Đang kích hoạt",
-    relayIdle: "An toàn / Ngắt",
-    gearN: "Đang ở số N",
-    gearEngaged: "Đang vào số",
-    msgFinding: "🔔 Đang phát tín hiệu TÌM XE...",
-    msgUnlocked: "🔓 Đã gửi lệnh MỞ KHOÁ!",
-    msgLocked: "🔒 Đã gửi lệnh KHOÁ XE!",
-    msgStarter: "🚀 Đã kích hoạt ĐỀ MÁY!",
-    msgAddFp: "🖐️ Hãy đặt ngón tay lên cảm biến...",
-    msgAddRfid: "💳 Hãy đưa thẻ RFID lại gần đầu đọc...",
-    msgSavedDelay: "⏱️ Đã cập nhật thời gian chờ!",
-    msgSavedStarter: "⚡ Đã lưu thời gian đề nổ!",
-    msgDelFp: "🗑️ Đã gửi lệnh xoá vân tay ID ",
-    msgDelRfid: "🗑️ Đã gửi lệnh xoá thẻ RFID #",
-    msgSavedOilConfig: "🛢️ Đã lưu định mức thay dầu!",
-    msgSavedMaint: "🛠️ Đã cập nhật lịch bảo dưỡng!",
-    msgSavedOdo: "🚗 Đã cập nhật số KM Odometer!",
-    findMelodyTitle: "Nhịp điệu còi tìm xe",
-    findMelodyDesc: "Chọn kiểu nhịp điệu còi hú tìm xe",
-    btnSaveMelody: "Lưu nhịp điệu còi",
-    msgSavedMelody: "🔔 Đã lưu nhịp điệu còi tìm xe!"
-  },
-  eng: {
-    alertLabel: "System Alert",
-    alertNormal: "NORMAL",
-    alertActive: "🚨 SIGNALING WARNING ALERT!",
-    sys: "System",
-    lockStatus: "Lock Status",
-    engineStatus: "Engine Status",
-    vBattLabel: "Power & Battery",
-    gearStatus: "Current Gear",
-    odometerLabel: "Odometer",
-    oilRemLabel: "Oil Change Remaining",
-    diagnosticsTitle: "Peripheral & System Diagnostics",
-    fpDiagLabel: "Fingerprint ZW101",
-    rfidDiagLabel: "RFID Card Reader",
-    relayDiagLabel: "Relays (Lock/Start)",
-    gearDiagLabel: "Gear Sensor (Gear/N)",
-    btnFind: "🔔 FIND VEHICLE",
-    btnUnlock: "ALLOW OPERATION (UNLOCK)",
-    btnStart: "PRESS TO START 🚀",
-    btnLock: "STOP OPERATION (LOCK)",
-    settingsTitle: "System Settings",
-    themeLabel: "Theme",
-    langLabel: "Language",
-    odoConfigTitle: "Update Odometer",
-    odoDesc: "Current Odometer Mileage (Km)",
-    btnSaveOdo: "Update Odometer",
-    oilConfigTitle: "Oil Change Thresholds",
-    oilKmDesc: "Oil change interval (Km)",
-    oilDaysDesc: "Oil change interval (Days)",
-    btnSaveOilConfig: "Save Oil Thresholds",
-    maintTitle: "Maintenance & Service Log",
-    oilDateLabel: "🛢️ Last Oil Change Date:",
-    serviceDateLabel: "🛠️ Last Service Date:",
-    airFilterDateLabel: "🌬️ Last Air Filter Date:",
-    btnSaveMaint: "Save Service Log",
-    fpTitle: "Fingerprint ZW101",
-    addFp: "+ Add New Fingerprint",
-    delFp: "Delete Fingerprint by ID",
-    rfidTitle: "RFID Card",
-    addRfid: "+ Add New Card",
-    delRfid: "Delete Card by Index",
-    delayTitle: "Delay Time Before Start",
-    delayDesc: "Seconds delay after unlock",
-    btnSaveDelay: "Save Delay Time",
-    starterTimeTitle: "Starter Time Settings",
-    starterTimeDesc: "Starter relay activation time (ms, min 500)",
-    btnSaveStarter: "Save Starter Time",
-    wifiTitle: "WiFi AP Settings",
-    wifiSsid: "WiFi Name (SSID)",
-    wifiPass: "New Password (min 8 chars)",
-    btnSaveWifi: "Save WiFi & Restart",
-    contactTitle: "Contact Support",
-    btnDelete: "Delete",
-    online: "ONLINE",
-    offline: "OFFLINE",
-    powerBike: "Bike Battery",
-    powerUsb: "USB 5V",
-    powerNormal: "Normal",
-    powerRecharge: "Recharge",
-    powerLow: "Low Voltage",
-    fpOk: "OK",
-    fpErr: "Connection Error",
-    rfidOk: "Operational",
-    rfidErr: "Malfunction",
-    relayActive: "Active",
-    relayIdle: "Idle / Off",
-    gearN: "Neutral (N)",
-    gearEngaged: "Gear Engaged",
-    msgFinding: "🔔 Locating vehicle...",
-    msgUnlocked: "🔓 UNLOCK command sent!",
-    msgLocked: "🔒 LOCK command sent!",
-    msgStarter: "🚀 ENGINE START command sent!",
-    msgAddFp: "🖐️ Please place finger on sensor...",
-    msgAddRfid: "💳 Please swipe RFID card...",
-    msgSavedDelay: "⏱️ Delay time updated!",
-    msgSavedStarter: "⚡ Starter time saved!",
-    msgDelFp: "🗑 Deleted fingerprint ID ",
-    msgDelRfid: "🗑️ Deleted RFID card #",
-    msgSavedOilConfig: "🛢️ Oil thresholds saved!",
-    msgSavedMaint: "🛠️ Maintenance log updated!",
-    msgSavedOdo: "🚗 Odometer updated!",
-    findMelodyTitle: "Find Vehicle Melody",
-    findMelodyDesc: "Select buzzer melody pattern",
-    btnSaveMelody: "Save Melody",
-    msgSavedMelody: "🔔 Melody settings saved!"
+  void onDisconnect(BLEServer*) override {
+    bleConnected = false;
+    bleAuthed = false;
+    restartAdvAt = millis() + 300;   // loop() se bat lai quang ba
   }
 };
 
-let currentLang = localStorage.getItem('lang') || 'vi';
+class CmdCb : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String v = String(c->getValue().c_str());
+    v.trim();
+    if (v.length() == 0 || v.length() >= CMD_LEN) return;
 
-function updateLanguageUI() {
-  const langBtn = document.getElementById('langBtn');
-  if (langBtn) langBtn.innerText = currentLang === 'vi' ? '🌐 VI' : '🌐 ENG';
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.getAttribute('data-i18n');
-    if (i18n[currentLang] && i18n[currentLang][key]) {
-      el.innerText = i18n[currentLang][key];
-    }
-  });
-}
-
-function toggleLang() {
-  currentLang = currentLang === 'vi' ? 'eng' : 'vi';
-  localStorage.setItem('lang', currentLang);
-  updateLanguageUI();
-  refresh();
-}
-
-const canvas = document.getElementById('snowCanvas');
-const ctx = canvas.getContext('2d');
-let flakes = [];
-let W = window.innerWidth;
-let H = window.innerHeight;
-
-function initSnow() {
-  W = window.innerWidth; H = window.innerHeight;
-  canvas.width = W; canvas.height = H;
-  flakes = [];
-  const flakeCount = Math.min(80, Math.floor(W / 5));
-  for (let i = 0; i < flakeCount; i++) {
-    flakes.push({
-      x: Math.random() * W, y: Math.random() * H,
-      r: Math.random() * 2.5 + 0.8, d: Math.random() * 0.8 + 0.4,
-      opacity: Math.random() * 0.7 + 0.3, sway: Math.random() * 0.05
-    });
-  }
-}
-
-function drawSnow() {
-  ctx.clearRect(0, 0, W, H);
-  const isLight = document.body.getAttribute('data-theme') === 'light';
-  flakes.forEach(f => {
-    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-    ctx.fillStyle = isLight ? `rgba(2, 132, 199, ${f.opacity * 0.5})` : `rgba(255, 255, 255, ${f.opacity})`;
-    ctx.fill();
-    f.y += f.d; f.x += Math.sin(f.y * 0.02) * f.sway * 10;
-    if (f.y > H + 5) { f.y = -5; f.x = Math.random() * W; }
-  });
-  requestAnimationFrame(drawSnow);
-}
-
-window.addEventListener('resize', initSnow);
-initSnow(); drawSnow();
-
-function toggleTheme() {
-  const currentTheme = document.body.getAttribute('data-theme');
-  const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-  document.body.setAttribute('data-theme', newTheme);
-  const themeBtn = document.getElementById('themeBtn');
-  if (themeBtn) themeBtn.innerText = newTheme === 'light' ? '☀️ Sáng' : '🌙 Tối';
-  localStorage.setItem('theme', newTheme);
-}
-
-const savedTheme = localStorage.getItem('theme') || 'dark';
-document.body.setAttribute('data-theme', savedTheme);
-const themeBtnInit = document.getElementById('themeBtn');
-if (themeBtnInit) themeBtnInit.innerText = savedTheme === 'light' ? '☀️ Sáng' : '🌙 Tối';
-
-function toggleModal(show) {
-  document.getElementById('settingsModal').classList.toggle('active', show);
-}
-
-// ================== BLE LAYER ==================
-Object.assign(i18n.vi, {
-  standStatus: "Chân chống",
-  bleDiagLabel: "Bluetooth",
-  standUp: "Đã gạt lên",
-  standDown: "ĐANG HẠ",
-  bleOk: "Đã kết nối",
-  wifiTitle: "Cài đặt Bluetooth",
-  bleNameDesc: "Tên Bluetooth (tối đa 12 ký tự)",
-  btnSaveBleName: "Lưu tên & Khởi động lại",
-  pinDesc: "Đổi PIN (4-8 chữ số)",
-  btnSavePin: "Lưu PIN mới",
-  btnDisconnect: "Ngắt kết nối",
-  connTitle: "Kết nối xe",
-  connHint: "Bật Bluetooth, đứng gần xe, nhập PIN rồi bấm Kết nối.",
-  btnConnect: "🔵 KẾT NỐI BLUETOOTH",
-  sleepTitle: "Tự động ngủ nông",
-  sleepDesc: "Vào chế độ ngủ sau (giây) khi khoá xe và không dùng. 0 = tắt.",
-  sleepModeEco: "Tiết kiệm (vẫn phát Bluetooth)",
-  sleepModeDeep: "Ngủ hẳn (chạm vân tay để đánh thức)",
-  btnSaveSleep: "Lưu thời gian ngủ",
-  msgSavedSleep: "😴 Đã lưu cài đặt ngủ nông!",
-  cancelFp: "Huỷ đăng ký",
-  clearFp: "Xoá tất cả vân tay",
-  fpEmpty: "Chưa có vân tay nào được lưu",
-  fpScanText: "Đang đăng ký vân tay: đã quét thành công ",
-  fpScanHint: "Đặt ngón tay lên cảm biến, nhấc ra khi đèn nháy xanh",
-  msgFpCancel: "Đã huỷ đăng ký vân tay",
-  msgFpClear: "🗑️ Đã gửi lệnh xoá tất cả vân tay",
-  confirmClearFp: "Xoá TẤT CẢ vân tay đã đăng ký?"
-});
-Object.assign(i18n.eng, {
-  standStatus: "Side Stand",
-  bleDiagLabel: "Bluetooth",
-  standUp: "Up",
-  standDown: "DOWN",
-  bleOk: "Connected",
-  wifiTitle: "Bluetooth Settings",
-  bleNameDesc: "Bluetooth name (max 12 chars)",
-  btnSaveBleName: "Save name & Restart",
-  pinDesc: "Change PIN (4-8 digits)",
-  btnSavePin: "Save new PIN",
-  btnDisconnect: "Disconnect",
-  connTitle: "Connect to bike",
-  connHint: "Turn on Bluetooth, stay near the bike, enter PIN and tap Connect.",
-  btnConnect: "🔵 CONNECT BLUETOOTH",
-  sleepTitle: "Auto light sleep",
-  sleepDesc: "Enter sleep after (seconds) when locked and idle. 0 = off.",
-  sleepModeEco: "Eco (Bluetooth stays visible)",
-  sleepModeDeep: "Deep (touch fingerprint to wake)",
-  btnSaveSleep: "Save sleep time",
-  msgSavedSleep: "😴 Sleep setting saved!",
-  cancelFp: "Cancel enrollment",
-  clearFp: "Delete all fingerprints",
-  fpEmpty: "No fingerprints saved",
-  fpScanText: "Enrolling fingerprint: successful scans ",
-  fpScanHint: "Place finger on the sensor, lift when the LED flashes green",
-  msgFpCancel: "Fingerprint enrollment cancelled",
-  msgFpClear: "🗑️ Delete-all fingerprints command sent",
-  confirmClearFp: "Delete ALL enrolled fingerprints?"
-});
-
-const SERVICE_UUID = '7a1c0001-5b6e-4c1d-9a3e-2f6d8b4c1e01';
-const CMD_UUID     = '7a1c0002-5b6e-4c1d-9a3e-2f6d8b4c1e01';
-const STATUS_UUID  = '7a1c0003-5b6e-4c1d-9a3e-2f6d8b4c1e01';
-const CONFIG_UUID  = '7a1c0004-5b6e-4c1d-9a3e-2f6d8b4c1e01';
-
-const enc = new TextEncoder();
-const dec = new TextDecoder();
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const L = (vi, en) => (currentLang === 'vi' ? vi : en);
-
-let bleDevice = null, chCmd = null, chStatus = null, chConfig = null;
-let connected = false;
-let pollGen = 0;
-let lastStatus = null, cfg = null;
-let lastStatusMsg = "";
-let fieldsLoaded = false;
-
-let chain = Promise.resolve();
-function gatt(fn) {
-  const r = chain.then(fn);
-  chain = r.catch(() => {});
-  return r;
-}
-
-function readJson(ch) {
-  return gatt(async () => {
-    const v = await ch.readValue();
-    return JSON.parse(dec.decode(v));
-  });
-}
-
-function writeCmd(text) {
-  return gatt(async () => {
-    const d = enc.encode(text);
-    if (chCmd.writeValueWithResponse) await chCmd.writeValueWithResponse(d);
-    else await chCmd.writeValue(d);
-  });
-}
-
-function setConnMsg(msg, isErr) {
-  const el = document.getElementById('connMsg');
-  el.innerText = msg;
-  el.style.color = isErr ? 'var(--pink)' : 'var(--subtext)';
-}
-
-function showConnect(show) {
-  document.getElementById('connectModal').classList.toggle('active', show);
-}
-
-async function connectBle() {
-  const btn = document.getElementById('connectBtn');
-  if (!navigator.bluetooth) {
-    setConnMsg(L(
-      'Trình duyệt này không hỗ trợ Web Bluetooth. iPhone: mở trang bằng Bluefy. Android: dùng Chrome.',
-      'This browser has no Web Bluetooth. iPhone: open in Bluefy. Android: use Chrome.'), true);
-    return;
-  }
-  const pin = document.getElementById('pinInput').value.trim();
-  if (!/^\d{4,8}$/.test(pin)) {
-    setConnMsg(L('PIN gồm 4-8 chữ số', 'PIN must be 4-8 digits'), true);
-    return;
-  }
-
-  btn.disabled = true;
-  try {
-    let server = null;
-    if (bleDevice) {
-      try {
-        setConnMsg(L('Đang kết nối lại...', 'Reconnecting...'));
-        server = await bleDevice.gatt.connect();
-      } catch (e) {
-        bleDevice = null;
-        server = null;
-      }
-    }
-
-    if (!server) {
-      setConnMsg(L('Chọn thiết bị trong danh sách...', 'Pick your device...'));
-      bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [SERVICE_UUID] }]
-      });
-      bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
-      setConnMsg(L('Đang kết nối...', 'Connecting...'));
-      server = await bleDevice.gatt.connect();
-    }
-
-    const svc = await server.getPrimaryService(SERVICE_UUID);
-    chCmd = await svc.getCharacteristic(CMD_UUID);
-    chStatus = await svc.getCharacteristic(STATUS_UUID);
-    chConfig = await svc.getCharacteristic(CONFIG_UUID);
-    chain = Promise.resolve();
-
-    setConnMsg(L('Đang xác thực PIN...', 'Checking PIN...'));
-    await writeCmd('auth:' + pin);
-
-    let ok = false, lockSec = 0;
-    for (let i = 0; i < 8; i++) {
-      await sleep(300);
-      const s = await readJson(chStatus);
-      if (s.auth) { ok = true; break; }
-      if (s.lock) { lockSec = s.lock; break; }
-    }
-
-    if (!ok) {
-      setConnMsg(lockSec
-        ? L('Sai PIN nhiều lần, thử lại sau ' + lockSec + ' giây', 'Too many wrong PINs, retry in ' + lockSec + 's')
-        : L('Sai PIN', 'Wrong PIN'), true);
-      try { bleDevice.gatt.disconnect(); } catch (e) {}
+    if (v.startsWith("auth:")) {       // xu ly ngay, khong can cho loop()
+      handleAuth(v.substring(5));
       return;
     }
+    if (!bleAuthed) return;            // chua nhap PIN dung -> bo qua moi lenh
 
-    connected = true;
-    try { localStorage.setItem('savedPin', pin); } catch (e) {}
-    fieldsLoaded = false;
-    lastStatusMsg = "";
-    await loadConfig();
-    await refresh();
-    showConnect(false);
-    startPolling();
-    showToast(L('✅ Đã kết nối xe', '✅ Connected'));
-  } catch (e) {
-    console.error(e);
-    if (e && e.name === 'NotFoundError') {
-      setConnMsg(L('Bạn chưa chọn thiết bị', 'No device selected'), true);
+    char buf[CMD_LEN];
+    strncpy(buf, v.c_str(), CMD_LEN - 1);
+    buf[CMD_LEN - 1] = 0;
+    xQueueSend(cmdQueue, buf, 0);
+  }
+};
+
+void handleAuth(const String &pin) {
+  if (millis() < authLockUntil) return;
+  if (pin == blePin) {
+    bleAuthed = true;
+    authFails = 0;
+    configDirty = true;
+  } else {
+    authFails++;
+    if (authFails >= 5) {
+      authLockUntil = millis() + 30000UL;   // khoa 30 giay sau 5 lan sai
+      authFails = 0;
+    }
+  }
+}
+
+// ============== SETUP / LOOP ================
+void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+  Serial.begin(921600);
+  delay(200);
+
+  Serial.println("\n\n==========================================");
+  Serial.println("[SYSTEM] Khoi dong he thong Khoa xe thong minh HQT v6 (BLE)...");
+  Serial.println("==========================================");
+
+  // Dat mode truoc roi moi ghi muc logic, tranh relay bi nhay luc khoi dong
+  pinMode(RELAY_POWER, OUTPUT);
+  pinMode(RELAY_STARTER, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED_D2_PIN, OUTPUT);
+  pinMode(SIDESTAND_PIN, INPUT_PULLUP);
+  pinMode(FP_WAKE_PIN, INPUT_PULLDOWN);
+
+  digitalWrite(RELAY_POWER, RELAY_OFF);
+  digitalWrite(RELAY_STARTER, RELAY_OFF);
+  buzzOff();
+  digitalWrite(LED_D2_PIN, LOW);
+
+  cmdQueue = xQueueCreate(8, CMD_LEN);
+  lastActivityMs = millis();
+  normalCpuMhz = getCpuFrequencyMhz();
+
+  loadAllSettings();
+
+  Serial.println("\n[INIT-FP] Dang ket noi cam bien van tay ZW101...");
+  finger.begin(57600);
+  delay(50);
+  // Mo UART2 sau finger.begin() de chac chan dung dung chan RX/TX da chon
+  fingerSerial.begin(57600, SERIAL_8N1, FINGER_RX, FINGER_TX);
+  delay(200);
+
+  if (finger.verifyPassword()) {
+    fpConnected = true;
+    finger.getParameters();   // can de tim kiem van tay (fingerSearch) biet dung luong thu vien
+    if (finger.capacity == 0 || finger.capacity > 1000) finger.capacity = MAX_FP + 1;
+    Serial.printf("[FP] dung luong thu vien tim kiem = %d\n", finger.capacity);
+    Serial.println("[HW] OK: Cam bien van tay ZW101 san sang!");
+    ledBlink(LEDC_BLUE, 2, 120, 120);
+    fpSyncFromModule();       // module la nguon dung: ESP32 nho dung cac ID dang co trong module
+  } else {
+    fpConnected = false;
+    Serial.println("[HW-ERR] CANH BAO: Khong the ket noi cam bien van tay ZW101!");
+  }
+
+#if USE_RFID
+#if PN532_USE_SPI
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, RFID_SS);
+#else
+  Wire.begin(PN532_SDA, PN532_SCL);
+#endif
+  delay(20);
+  if (pn532Init()) Serial.println("[HW] OK: PN532 san sang!");
+  else Serial.println("[HW-ERR] CANH BAO: Khong tim thay PN532 (kiem tra day, cong tat DIP I2C/SPI)");
+#else
+  Serial.println("[RFID] Dang TAT (USE_RFID = 0), mo khoa bang nut tren app");
+#endif
+
+  startBLE();
+  beepBuzzer(2000, 80, 2);
+  Serial.println("[SYSTEM] He thong da san sang!\n");
+}
+
+void loop() {
+  handleRFIDReader();
+
+  // Thuc thi lenh nhan tu BLE (chay o loop de khong chan tac vu BLE)
+  char cbuf[CMD_LEN];
+  while (xQueueReceive(cmdQueue, cbuf, 0) == pdTRUE) {
+    processCommand(String(cbuf));
+    configDirty = true;
+  }
+
+  // Quang ba lai sau khi mat ket noi
+  if (restartAdvAt != 0 && millis() > restartAdvAt) {
+    restartAdvAt = 0;
+    BLEDevice::startAdvertising();
+  }
+
+  // Het thoi gian cho them the RFID
+  if (isAddingRfid && millis() - rfidAddTimer > 15000) {
+    isAddingRfid = false;
+    lastStatusMsg = "Het thoi gian cho quet the";
+  }
+
+  // Cap nhat gia tri cho characteristic (CONFIG truoc, STATUS sau)
+  if (bleConnected) {
+    bool a = bleAuthed;
+    if (a != lastAuthState) { lastAuthState = a; configDirty = true; }
+    if (configDirty) { configDirty = false; updateConfigChar(); }
+    if (millis() - lastStatusUpdate > 300) {
+      lastStatusUpdate = millis();
+      updateStatusChar();
+    }
+  } else {
+    lastAuthState = false;
+  }
+
+  if (millis() - lastRfidCheckTime > 2000) {
+    lastRfidCheckTime = millis();
+    checkAndResetRfidModule();
+  }
+
+  if (millis() - lastDebugPrintTime > 5000) {
+    lastDebugPrintTime = millis();
+    printSystemStatusToSerial();
+  }
+
+  ledService();
+
+  if (fpEnrolling) handleFpEnroll();
+  else handleFingerprintLogic();
+
+  // Co hoat dong -> lam moi dong ho cho ngu
+  if (bleConnected || isUnlocked || fpEnrolling || isAddingRfid || lastFingerState ||
+      digitalRead(RELAY_STARTER) == RELAY_ON) {
+    lastActivityMs = millis();
+    if (ecoActive) exitEco();
+  }
+  checkAutoSleep();
+
+  // Che do tiet kiem: cho CPU nghi giua cac vong lap (van quet van tay moi 50ms)
+  if (ecoActive) delay(50);
+}
+
+// ============== BLE ================
+void startBLE() {
+  BLEDevice::init(bleName.c_str());
+  BLEDevice::setMTU(185);
+
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCb());
+
+  BLEService* svc = pServer->createService(SERVICE_UUID);
+
+  chCmd = svc->createCharacteristic(CMD_UUID, BLECharacteristic::PROPERTY_WRITE);
+  chCmd->setCallbacks(new CmdCb());
+
+  chStatus = svc->createCharacteristic(STATUS_UUID, BLECharacteristic::PROPERTY_READ);
+  chConfig = svc->createCharacteristic(CONFIG_UUID, BLECharacteristic::PROPERTY_READ);
+
+  String stub = "{\"auth\":false}";
+  chStatus->setValue((uint8_t*)stub.c_str(), stub.length());
+  chConfig->setValue((uint8_t*)stub.c_str(), stub.length());
+
+  svc->start();
+
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+  adv->addServiceUUID(SERVICE_UUID);
+  adv->setScanResponse(true);
+  BLEDevice::startAdvertising();
+
+  Serial.printf("[BLE] Dang quang ba voi ten: %s\n", bleName.c_str());
+}
+
+String jsonEscape(const String &s) {
+  String o;
+  for (size_t i = 0; i < s.length(); i++) {
+    char ch = s[i];
+    if (ch == '"' || ch == '\\') { o += '\\'; o += ch; }
+    else if (ch == '\n' || ch == '\r') o += ' ';
+    else o += ch;
+  }
+  return o;
+}
+
+float readBatteryVolt() {
+  int rawAdc = analogRead(BATTERY_ADC_PIN);
+  float v = (rawAdc / 4095.0) * 3.3 * 4.3;
+  if (v < 2.0) v = 12.6;
+  return v;
+}
+
+void updateStatusChar() {
+  String j;
+  if (!bleAuthed) {
+    long lockLeft = (long)(authLockUntil - millis());
+    j = "{\"auth\":false,\"lock\":" + String(lockLeft > 0 ? (lockLeft / 1000 + 1) : 0) + "}";
+  } else {
+    j = "{\"auth\":true";
+    j += ",\"unlocked\":" + String(isUnlocked ? "true" : "false");
+    j += ",\"engine\":" + String(isEngineRunning ? "true" : "false");
+    j += ",\"starter\":" + String(digitalRead(RELAY_STARTER) == RELAY_ON ? "true" : "false");
+    j += ",\"alarm\":" + String(isAlarmActive ? "true" : "false");
+    j += ",\"vBatt\":" + String(readBatteryVolt(), 1);
+    j += ",\"standDown\":" + String(digitalRead(SIDESTAND_PIN) == LOW ? "true" : "false");
+    j += ",\"fp\":" + String(fpConnected ? "true" : "false");
+    j += ",\"rfid\":" + String(rfidOk ? "true" : "false");
+    j += ",\"adding\":" + String(isAddingRfid ? "true" : "false");
+    j += ",\"fpAdd\":" + String(fpEnrolling ? "true" : "false");
+    j += ",\"fpStep\":" + String(fpStep);
+    j += ",\"msg\":\"" + jsonEscape(lastStatusMsg) + "\"}";
+  }
+  chStatus->setValue((uint8_t*)j.c_str(), j.length());
+}
+
+void updateConfigChar() {
+  String j;
+  if (!bleAuthed) {
+    j = "{\"auth\":false}";
+  } else {
+    j = "{\"auth\":true";
+    j += ",\"name\":\"" + jsonEscape(bleName) + "\"";
+    j += ",\"starterMs\":" + String(starterTimeMs);
+    j += ",\"holdMs\":" + String(holdStartMs);
+    j += ",\"delay\":" + String(delaySec);
+    j += ",\"sleepSec\":" + String(sleepSec);
+    j += ",\"sleepMode\":" + String(sleepMode);
+    j += ",\"odo\":" + String(odometerKm);
+    j += ",\"oilKm\":" + String(oilLimitKm);
+    j += ",\"oilDays\":" + String(oilLimitDays);
+    j += ",\"lastOilOdo\":" + String(lastOilOdo);
+    j += ",\"oilDate\":\"" + oilDate + "\"";
+    j += ",\"servDate\":\"" + servDate + "\"";
+    j += ",\"airDate\":\"" + airDate + "\"";
+    j += ",\"melody\":" + String(findMelodyMode);
+    j += ",\"repTimes\":" + String(findRepeatTimes);
+    j += ",\"cards\":[";
+    for (size_t i = 0; i < validRfidUIDs.size(); i++) {
+      if (i > 0) j += ",";
+      j += "\"" + validRfidUIDs[i] + "\"";
+    }
+    j += "]";
+    j += ",\"fps\":[";
+    for (size_t i = 0; i < fpIds.size(); i++) {
+      if (i > 0) j += ",";
+      j += String(fpIds[i]);
+    }
+    j += "]}";
+  }
+  chConfig->setValue((uint8_t*)j.c_str(), j.length());
+}
+
+bool isDateStr(const String &s) {
+  if (s.length() == 0) return true;       // cho phep xoa ngay
+  if (s.length() != 10) return false;
+  for (int i = 0; i < 10; i++) {
+    if (i == 4 || i == 7) { if (s[i] != '-') return false; }
+    else if (s[i] < '0' || s[i] > '9') return false;
+  }
+  return true;
+}
+
+// ============== XU LY LENH ================
+void processCommand(const String &c) {
+  int p = c.indexOf(':');
+  String verb = (p < 0) ? c : c.substring(0, p);
+  String arg  = (p < 0) ? "" : c.substring(p + 1);
+
+  Serial.printf("[BLE-CMD] %s\n", c.c_str());
+
+  if (verb == "unlock") {
+    lastStatusMsg = "Mo khoa xe tu app";
+    unlockBike();
+  } else if (verb == "lock") {
+    lastStatusMsg = "Khoa xe tu app";
+    lockBike();
+  } else if (verb == "start") {
+    startEngineTimerMode();
+  } else if (verb == "find") {
+    triggerFindBike();
+  } else if (verb == "melody") {
+    int m = arg.toInt();
+    if (m >= 0 && m <= 9) {
+      findMelodyMode = m;
+      saveAllSettings();
+      lastStatusMsg = "Da luu che do coi tim xe!";
+    }
+  } else if (verb == "repeat") {
+    int rep = arg.toInt();
+    if (rep >= 5 && rep <= 50) {
+      findRepeatTimes = rep;
+      saveAllSettings();
+      lastStatusMsg = "Da luu so lan lap lai coi!";
+    }
+  } else if (verb == "starter") {
+    long ms = arg.toInt();
+    if (ms < 500) ms = 500;
+    if (ms > 10000) ms = 10000;     // tran an toan: toi da 10 giay
+    starterTimeMs = ms;
+    saveAllSettings();
+    lastStatusMsg = "Da luu thoi gian de: " + String(starterTimeMs) + "ms";
+  } else if (verb == "hold") {
+    long ms = arg.toInt();
+    if (ms < FP_HOLD_MIN_MS) ms = FP_HOLD_MIN_MS;
+    if (ms > FP_HOLD_MAX_CFG_MS) ms = FP_HOLD_MAX_CFG_MS;
+    holdStartMs = ms;
+    saveAllSettings();
+    lastStatusMsg = "Da luu thoi gian giu de: " + String(holdStartMs) + "ms";
+  } else if (verb == "delay") {
+    long s = arg.toInt();
+    if (s < 1) s = 1;
+    if (s > 30) s = 30;
+    delaySec = s;
+    saveAllSettings();
+    lastStatusMsg = "Da luu thoi gian cho";
+  } else if (verb == "addrfid") {
+    if ((int)validRfidUIDs.size() >= MAX_RFID_CARDS) {
+      lastStatusMsg = "Da day bo nho the RFID";
     } else {
-      setConnMsg(L('Kết nối thất bại, thử lại. ', 'Connection failed, try again. ') + (e && e.message ? e.message : ''), true);
+      isAddingRfid = true;
+      rfidAddTimer = millis();
+      lastStatusMsg = "Dang cho quet the RFID...";
     }
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function onDisconnected() {
-  const was = connected;
-  connected = false;
-  pollGen++;
-  if (was) {
-    showConnect(true);
-    setConnMsg(L('Mất kết nối. Bấm Kết nối để thử lại.', 'Disconnected. Tap Connect to retry.'), true);
-  }
-}
-
-function disconnectBle() {
-  connected = false;
-  pollGen++;
-  try { if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect(); } catch (e) {}
-  toggleModal(false);
-  showConnect(true);
-  setConnMsg(i18n[currentLang].connHint, false);
-}
-
-function forceReauth() {
-  connected = false;
-  pollGen++;
-  try { bleDevice.gatt.disconnect(); } catch (e) {}
-  showConnect(true);
-  setConnMsg(L('Phiên đã hết hạn, nhập lại PIN', 'Session expired, enter PIN again'), true);
-}
-
-function startPolling() {
-  const g = ++pollGen;
-  (async () => {
-    while (g === pollGen && connected) {
-      await sleep(1500);
-      if (g !== pollGen || !connected) break;
-      await refresh();
+  } else if (verb == "delrfid") {
+    int idx = arg.toInt();
+    if (idx >= 0 && idx < (int)validRfidUIDs.size()) {
+      validRfidUIDs.erase(validRfidUIDs.begin() + idx);
+      saveAllSettings();
+      lastStatusMsg = "Da xoa the RFID!";
     }
-  })();
-}
-
-async function loadConfig() {
-  try {
-    const c = await readJson(chConfig);
-    if (c.auth) { cfg = c; renderConfig(c); }
-  } catch (e) { console.error('config', e); }
-}
-
-async function refresh() {
-  if (!connected) return;
-  try {
-    const d = await readJson(chStatus);
-    if (!d.auth) { forceReauth(); return; }
-    lastStatus = d;
-    renderStatus(d);
-  } catch (e) {
-    console.error('status', e);
+  } else if (verb == "ledtest") {
+    ledTestCode = 1;
+    ledTestNext = 0;
+    lastStatusMsg = "Thu mau LED: xem den van tay";
+  } else if (verb == "sleepmode") {
+    sleepMode = (arg.toInt() == 0) ? 0 : 1;
+    if (ecoActive) exitEco();
+    saveAllSettings();
+    lastActivityMs = millis();
+    lastStatusMsg = sleepMode ? "Che do ngu: Tiet kiem (van phat BLE)" : "Che do ngu: Ngu hang (cham van tay de thuc)";
+  } else if (verb == "sleep") {
+    long s = arg.toInt();
+    if (s <= 0) {
+      sleepSec = 0;
+      lastStatusMsg = "Da tat tu dong ngu";
+    } else {
+      if (s < SLEEP_MIN_SEC) s = SLEEP_MIN_SEC;
+      if (s > SLEEP_MAX_SEC) s = SLEEP_MAX_SEC;
+      sleepSec = s;
+      lastStatusMsg = "Se ngu sau " + String(sleepSec) + " giay khong mo khoa";
+    }
+    saveAllSettings();
+    lastActivityMs = millis();
+  } else if (verb == "addfp") {
+    startFpEnroll(arg.length() ? (int)arg.toInt() : 0);
+  } else if (verb == "cancelfp") {
+    if (fpEnrolling) cancelFpEnroll("Da huy dang ky van tay");
+  } else if (verb == "delfp") {
+    int id = arg.toInt();
+    if (!fpConnected) {
+      lastStatusMsg = "Cam bien van tay chua ket noi";
+    } else if (fpEnrolling) {
+      lastStatusMsg = "Dang dang ky van tay, hay doi";
+    } else if (id >= 1 && id <= MAX_FP) {
+      uint8_t r = finger.deleteModel(id);
+      for (size_t i = 0; i < fpIds.size(); i++) {
+        if (fpIds[i] == id) { fpIds.erase(fpIds.begin() + i); break; }
+      }
+      saveAllSettings();
+      lastStatusMsg = (r == FINGERPRINT_OK) ? ("Da xoa van tay ID " + String(id))
+                                            : ("Da go ID " + String(id) + " (module bao loi " + String(r) + ")");
+    }
+  } else if (verb == "clrfp") {
+    if (!fpConnected) {
+      lastStatusMsg = "Cam bien van tay chua ket noi";
+    } else if (fpEnrolling) {
+      lastStatusMsg = "Dang dang ky van tay, hay doi";
+    } else {
+      uint8_t r = finger.emptyDatabase();
+      fpIds.clear();
+      saveAllSettings();
+      lastStatusMsg = (r == FINGERPRINT_OK) ? "Da xoa tat ca van tay"
+                                            : ("Da xoa danh sach ESP32 (module bao loi " + String(r) + ")");
+    }
+  } else if (verb == "odo") {
+    long v = arg.toInt();
+    if (v < 0) v = 0;
+    odometerKm = v;
+    saveAllSettings();
+    lastStatusMsg = "Da cap nhat odometer";
+  } else if (verb == "oil") {
+    int comma = arg.indexOf(',');
+    if (comma > 0) {
+      long km = arg.substring(0, comma).toInt();
+      long days = arg.substring(comma + 1).toInt();
+      if (km > 0) oilLimitKm = km;
+      if (days > 0) oilLimitDays = days;
+      saveAllSettings();
+      lastStatusMsg = "Da luu dinh muc thay dau";
+    }
+  } else if (verb == "mo") {
+    if (isDateStr(arg)) {
+      if (arg != oilDate) { oilDate = arg; lastOilOdo = odometerKm; }
+      saveAllSettings();
+      lastStatusMsg = "Da luu ngay thay dau";
+    }
+  } else if (verb == "ms") {
+    if (isDateStr(arg)) { servDate = arg; saveAllSettings(); lastStatusMsg = "Da luu ngay bao duong"; }
+  } else if (verb == "ma") {
+    if (isDateStr(arg)) { airDate = arg; saveAllSettings(); lastStatusMsg = "Da luu ngay thay loc gio"; }
+  } else if (verb == "pin") {
+    bool ok = (arg.length() >= 4 && arg.length() <= 8);
+    for (size_t i = 0; ok && i < arg.length(); i++) if (arg[i] < '0' || arg[i] > '9') ok = false;
+    if (ok) {
+      blePin = arg;
+      saveAllSettings();
+      lastStatusMsg = "Da doi PIN";
+    } else {
+      lastStatusMsg = "PIN phai 4-8 chu so";
+    }
+  } else if (verb == "name") {
+    String n = arg;
+    n.trim();
+    if (n.length() >= 1 && n.length() <= 12) {
+      bleName = n;
+      saveAllSettings();
+      lastStatusMsg = "Da doi ten BLE, dang khoi dong lai...";
+      updateStatusChar();
+      delay(500);
+      ESP.restart();
+    }
   }
 }
 
-async function send(text, toastMsg, quiet) {
-  if (!connected) {
-    showToast(L('⚠️ Chưa kết nối thiết bị!', '⚠️ Not connected!'));
+// ============== RFID ================
+#if USE_RFID
+bool pn532Init() {
+  nfc.begin();
+  uint32_t ver = nfc.getFirmwareVersion();
+  if (!ver) {
+    rfidOk = false;
     return false;
   }
-  try {
-    await writeCmd(text);
-    if (toastMsg) showToast(toastMsg);
-    if (!quiet) {
-      setTimeout(async () => { await refresh(); await loadConfig(); }, 700);
+  Serial.printf("[RFID] PN5%02X firmware %d.%d\n", (ver >> 24) & 0xFF, (ver >> 16) & 0xFF, (ver >> 8) & 0xFF);
+  nfc.SAMConfig();                       
+  nfc.setPassiveActivationRetries(0x01); 
+  rfidOk = true;
+  return true;
+}
+
+void hardResetRFID() {
+  if (rfidOk) nfc.SAMConfig();
+}
+
+void checkAndResetRfidModule() {
+  if (touchActive) return;               
+  if (nfc.getFirmwareVersion() == 0) {
+    if (rfidOk) Serial.println("[RFID-WARN] PN532 khong tra loi, dang khoi tao lai...");
+    rfidOk = false;
+    pn532Init();
+  } else {
+    rfidOk = true;
+  }
+}
+#else
+void hardResetRFID() {}
+void checkAndResetRfidModule() {}
+#endif
+
+// ============== RELAY / KHOA ================
+void resetFingerLED() {
+  ledOff();
+}
+
+void unlockBike() {
+  isUnlocked = true;
+  tapCount = 0;
+  digitalWrite(RELAY_POWER, RELAY_ON);
+  digitalWrite(LED_D2_PIN, HIGH);
+
+  Serial.println("[RELAY] RELAY_POWER -> BAT (Mo khoa xe thanh cong)");
+  ledBlink(LEDC_GREEN, 2, 150, 100, 2500);
+}
+
+void lockBike() {
+  isUnlocked = false;
+  isEngineRunning = false;
+  tapCount = 0;
+  digitalWrite(RELAY_STARTER, RELAY_OFF);
+  digitalWrite(RELAY_POWER, RELAY_OFF);
+  digitalWrite(LED_D2_PIN, LOW);
+
+  Serial.println("[RELAY] RELAY_POWER & RELAY_STARTER -> TAT (Da khoa/tat may xe)");
+  ledBlink(LEDC_RED, 2, 150, 100, 1000);
+
+  delay(100);
+  hardResetRFID();
+}
+
+void startEngineTimerMode() {
+  if (!isUnlocked) {
+    lastStatusMsg = "Chua mo khoa, khong the de!";
+    return;
+  }
+
+  if (digitalRead(SIDESTAND_PIN) == LOW) {
+    lastStatusMsg = "Canh bao: Chan chong dang ha!";
+    beepBuzzer(3000, 100, 3);
+    return;
+  }
+
+  Serial.println("[RELAY] Kich RELAY_STARTER qua app BLE...");
+  digitalWrite(RELAY_STARTER, RELAY_ON);
+  isEngineRunning = true;
+  delay(starterTimeMs);
+  digitalWrite(RELAY_STARTER, RELAY_OFF);
+  isEngineRunning = false;
+  lastStatusMsg = "De no qua app thanh cong!";
+  beepBuzzer(2000, 80, 1);
+
+  delay(100);
+  hardResetRFID();
+}
+
+// Hàm phát nhịp điệu còi tìm xe đa dạng (Hỗ trợ 10 chế độ và tùy chỉnh số lần lặp từ 5 đến 50)
+void playFindBikeMelodyCustom(uint8_t mode, uint8_t repeatTimes) {
+  if (repeatTimes < 5) repeatTimes = 5;
+  if (repeatTimes > 50) repeatTimes = 50;
+
+  for (uint8_t r = 0; r < repeatTimes; r++) {
+    switch (mode) {
+      case 0: // 0: Tiêu chuẩn - Dồn dập (Sport/Fast)
+        #if BUZZER_ACTIVE
+        for (int i = 0; i < 3; i++) {
+          digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(90);
+          digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(70);
+        }
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(220);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL);
+        #else
+        {
+          int notes[] = {2000, 2400, 2800, 3200};
+          for (int i = 0; i < 4; i++) {
+            tone(BUZZER_PIN, notes[i]); delay(80); noTone(BUZZER_PIN); delay(40);
+          }
+          tone(BUZZER_PIN, 3600); delay(250); noTone(BUZZER_PIN);
+        }
+        #endif
+        break;
+
+      case 1: // 1: Vui nhộn (Playful/Bíp bíp dồn dập ngắn)
+        #if BUZZER_ACTIVE
+        for (int i = 0; i < 5; i++) {
+          digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(50);
+          digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(50);
+        }
+        #else
+        {
+          int notes[] = {1500, 2000, 2500, 3000, 3500};
+          for (int i = 0; i < 5; i++) {
+            tone(BUZZER_PIN, notes[i]); delay(60); noTone(BUZZER_PIN); delay(30);
+          }
+        }
+        #endif
+        break;
+
+      case 2: // 2: VIP Cao cấp (Sang trọng / Dual-tone dài)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(180);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(100);
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(180);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL);
+        #else
+        tone(BUZZER_PIN, 2200); delay(150); noTone(BUZZER_PIN); delay(80);
+        tone(BUZZER_PIN, 3100); delay(250); noTone(BUZZER_PIN);
+        #endif
+        break;
+
+      case 3: // 3: Còi hú khẩn cấp (Emergency Siren)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(300);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(100);
+        #else
+        tone(BUZZER_PIN, 1000); delay(250); tone(BUZZER_PIN, 2500); delay(250); noTone(BUZZER_PIN);
+        #endif
+        break;
+
+      case 4: // 4: Nhịp đôi dồn dập (Double Beep Fast)
+        #if BUZZER_ACTIVE
+        for(int i=0; i<2; i++) {
+          digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(60);
+          digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(60);
+        }
+        #else
+        for(int i=0; i<2; i++) {
+          tone(BUZZER_PIN, 2800); delay(60); noTone(BUZZER_PIN); delay(60);
+        }
+        #endif
+        break;
+
+      case 5: // 5: Tít chậm lôi cuốn (Slow Beep)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(250);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(250);
+        #else
+        tone(BUZZER_PIN, 2000); delay(250); noTone(BUZZER_PIN); delay(250);
+        #endif
+        break;
+
+      case 6: // 6: Âm thanh Robot (Robot BEEP)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(40);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(40);
+        #else
+        tone(BUZZER_PIN, 4000); delay(40); noTone(BUZZER_PIN); delay(40);
+        #endif
+        break;
+
+      case 7: // 7: Còi lùi ô tô (Reverse Sound)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(120);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(120);
+        #else
+        tone(BUZZER_PIN, 1500); delay(120); noTone(BUZZER_PIN); delay(120);
+        #endif
+        break;
+
+      case 8: // 8: Nhịp tim đập (Heartbeat)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(80);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(80);
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(150);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL);
+        #else
+        tone(BUZZER_PIN, 2200); delay(80); noTone(BUZZER_PIN); delay(80);
+        tone(BUZZER_PIN, 2200); delay(150); noTone(BUZZER_PIN);
+        #endif
+        break;
+
+      case 9: // 9: Còi chớp đa tầng (Multi-Tone Strobe)
+        #if BUZZER_ACTIVE
+        digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL); delay(100);
+        digitalWrite(BUZZER_PIN, !BUZZER_ON_LEVEL); delay(50);
+        #else
+        tone(BUZZER_PIN, 3000); delay(70); tone(BUZZER_PIN, 1800); delay(70); noTone(BUZZER_PIN);
+        #endif
+        break;
     }
-    return true;
-  } catch (e) {
-    console.error(e);
-    showToast(L('⚠️ Lỗi kết nối thiết bị!', '⚠️ Device error!'));
-    return false;
+    delay(50);
   }
 }
 
-let alertTimeout = null;
-
-function triggerFindBike() {
-  send('find', i18n[currentLang].msgFinding);
-
-  const card = document.getElementById('alertCard');
-  const val = document.getElementById('gAlertValue');
-
-  card.classList.add('active-alert');
-  val.className = 'value danger';
-  val.innerText = i18n[currentLang].alertActive;
-
-  if (alertTimeout) clearTimeout(alertTimeout);
-  alertTimeout = setTimeout(() => {
-    card.classList.remove('active-alert');
-    val.className = 'value off';
-    val.innerText = i18n[currentLang].alertNormal;
-  }, 5000);
+void triggerFindBike() {
+  isAlarmActive = true;
+  playFindBikeMelodyCustom(findMelodyMode, findRepeatTimes);
+  isAlarmActive = false;
+  digitalWrite(LED_D2_PIN, isUnlocked ? HIGH : LOW);
+  ledOff();
 }
 
-function renderStatus(d) {
-  const t = i18n[currentLang];
-
-  if (lastStatusMsg !== "" && d.msg && lastStatusMsg !== d.msg) {
-    showToast("📢 " + d.msg);
+void blinkLedD2(int times, int delayMs) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(LED_D2_PIN, HIGH);
+    delay(delayMs);
+    digitalWrite(LED_D2_PIN, LOW);
+    delay(delayMs);
   }
-  if (d.msg) lastStatusMsg = d.msg;
+  if (isUnlocked) digitalWrite(LED_D2_PIN, HIGH);
+}
 
-  document.getElementById('gLock').innerHTML = d.unlocked
-    ? `<span class="on">${t.online}</span>` : `<span class="off">${t.offline}</span>`;
+bool isFingerPressed() {
+  uint8_t p = finger.getImage();
+  return (p == FINGERPRINT_OK);
+}
 
-  document.getElementById('gEngine').innerHTML = d.engine
-    ? '<span class="on">ON</span>' : '<span class="off">OFF</span>';
+#if USE_RFID
+String uidToString(const uint8_t *uid, uint8_t len) {
+  String s = "";
+  for (uint8_t i = 0; i < len; i++) {
+    if (uid[i] < 0x10) s += "0";
+    s += String(uid[i], HEX);
+  }
+  s.toUpperCase();
+  return s;
+}
 
-  const vBatt = (d.vBatt !== undefined) ? d.vBatt : 12.6;
-  const vBattElem = document.getElementById('gVBatt');
-  vBattElem.innerText = vBatt.toFixed(1) + " V";
-  let powerWarnStr;
-  if (vBatt < 11.8) { vBattElem.className = "value danger"; powerWarnStr = t.powerLow; }
-  else if (vBatt < 12.2) { vBattElem.className = "value warn"; powerWarnStr = t.powerRecharge; }
-  else { vBattElem.className = "value on"; powerWarnStr = t.powerNormal; }
-  document.getElementById('gPowerType').innerText = `${t.powerBike} • ${powerWarnStr}`;
+void handleRFIDReader() {
+  if (!rfidOk) return;
+  if (touchActive || fpEnrolling) return;
 
-  document.getElementById('gStand').innerHTML = d.standDown
-    ? `<span class="danger">${t.standDown}</span>` : `<span class="on">${t.standUp}</span>`;
+  uint8_t uid[7] = {0};
+  uint8_t uidLen = 0;
+  if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 30)) return;
 
-  document.getElementById('gFpStatus').innerHTML = d.fp
-    ? `<span class="on">${t.fpOk}</span>` : `<span class="danger">${t.fpErr}</span>`;
+  static unsigned long lastCardSeen = 0;
+  unsigned long nowMs = millis();
+  bool isNewScan = (nowMs - lastCardSeen > 800);
+  lastCardSeen = nowMs;
+  if (!isNewScan) return;
 
-  document.getElementById('gRfidStatus').innerHTML = d.rfid
-    ? `<span class="on">${t.rfidOk}</span>` : `<span class="danger">${t.rfidErr}</span>`;
+  String scannedUID = uidToString(uid, uidLen);
+  Serial.printf("[RFID] Quet duoc the UID: %s\n", scannedUID.c_str());
 
-  document.getElementById('gRelayStatus').innerHTML = (d.starter || d.engine)
-    ? `<span class="on">${t.relayActive}</span>` : `<span class="off">${t.relayIdle}</span>`;
+  if (isAddingRfid) {
+    bool exists = false;
+    for (const String &existingUid : validRfidUIDs) {
+      if (existingUid.equalsIgnoreCase(scannedUID)) { exists = true; break; }
+    }
 
-  document.getElementById('gBleStatus').innerHTML = `<span class="on">${t.bleOk}</span>`;
-
-  const fpBox = document.getElementById('fpProgress');
-  const fpAddBtn = document.getElementById('addFpBtn');
-  if (fpBox) {
-    if (d.fpAdd) {
-      const step = d.fpStep || 0;
-      fpBox.style.display = 'flex';
-      document.getElementById('fpProgressText').innerText = t.fpScanText + step + '/5';
-      document.getElementById('fpProgressBar').style.width = (step / 5 * 100) + '%';
-      fpAddBtn.disabled = true;
-      fpWasEnrolling = true;
+    if (!exists) {
+      validRfidUIDs.push_back(scannedUID);
+      saveAllSettings();
+      configDirty = true;
+      lastStatusMsg = "Da luu the moi UID: " + scannedUID;
+      blinkLedD2(3, 30);
+      beepBuzzer(2500, 80, 2);
     } else {
-      fpBox.style.display = 'none';
-      fpAddBtn.disabled = false;
-      if (fpWasEnrolling) {
-        fpWasEnrolling = false;
-        loadConfig();
+      lastStatusMsg = "The nay da ton tai!";
+      blinkLedD2(2, 60);
+      beepBuzzer(1500, 100, 2);
+    }
+    isAddingRfid = false;
+    return;
+  }
+
+  bool matched = false;
+  for (const String &uid : validRfidUIDs) {
+    if (uid.equalsIgnoreCase(scannedUID)) { matched = true; break; }
+  }
+
+  if (matched) {
+    Serial.printf("[RFID] The RFID hop le: %s\n", scannedUID.c_str());
+    if (!isUnlocked) {
+      lastStatusMsg = "Mo khoa xe bang the UID: " + scannedUID;
+      unlockBike();
+    } else {
+      lastStatusMsg = "Khoa/Tat may xe bang the UID: " + scannedUID;
+      lockBike();
+    }
+  } else {
+    Serial.printf("[RFID-ERR] The RFID khong hop le: %s\n", scannedUID.c_str());
+    lastStatusMsg = "Canh bao: The RFID khong hop le!";
+    blinkLedD2(2, 50);
+    beepBuzzer(1000, 100, 2);
+  }
+}
+#else
+void handleRFIDReader() {}
+#endif
+
+bool fpHasId(uint16_t id) {
+  for (size_t i = 0; i < fpIds.size(); i++) {
+    if (fpIds[i] == id) return true;
+  }
+  return false;
+}
+
+int8_t fpIdentifyCurrent() {
+  uint8_t r = finger.image2Tz(1);
+  if (r != FINGERPRINT_OK) return -1;
+
+  finger.fingerID = 0xFFFF;
+  finger.confidence = 0;
+  uint8_t p = finger.fingerSearch();
+
+  if (p == FINGERPRINT_OK && finger.confidence > 0 && finger.fingerID < 1000) {
+    if (!fpHasId(finger.fingerID)) {
+      fpIds.push_back(finger.fingerID);
+      saveAllSettings();
+      configDirty = true;
+    }
+    return 1;
+  }
+  if (p == FINGERPRINT_OK || p == FINGERPRINT_NOTFOUND) return 0;
+  return -1;
+}
+
+void fpSyncFromModule() {
+  if (!fpConnected) return;
+  if (finger.getTemplateCount() != FINGERPRINT_OK) return;
+  uint16_t total = finger.templateCount;
+  std::vector<uint16_t> found;
+  uint8_t lastErr = 0;
+
+  for (uint8_t pass = 0; pass < 2 && found.size() < total; pass++) {
+    found.clear();
+    for (uint16_t id = 1; id <= MAX_FP; id++) {
+      uint8_t r = finger.loadModel(id);
+      if (r == FINGERPRINT_OK) found.push_back(id);
+      else lastErr = r;
+    }
+  }
+
+  if (found.size() > total) return;
+
+  if (found.size() < total) {
+    bool changed = false;
+    for (size_t i = 0; i < found.size(); i++) {
+      if (!fpHasId(found[i])) { fpIds.push_back(found[i]); changed = true; }
+    }
+    if (changed) { saveAllSettings(); configDirty = true; }
+    return;
+  }
+
+  std::vector<uint16_t> cur = fpIds;
+  std::sort(cur.begin(), cur.end());
+  if (cur != found) {
+    fpIds = found;
+    saveAllSettings();
+    configDirty = true;
+  }
+}
+
+void fpOnTouchStart() {
+  unsigned long now = millis();
+  touchOwner = false;
+  touchPoor = false;
+  lastVerifyMs = now;
+
+  if (fpIds.empty()) {
+    if (!isUnlocked) {
+      lastStatusMsg = "Chua co van tay nao, hay mo khoa bang app";
+      ledSolid(LEDC_RED, 600);
+      beepBuzzer(1000, 100, 2);
+      touchWaitRelease = true;
+    } else {
+      touchOwner = true;
+      ledSolid(LEDC_BLUE, 300);
+    }
+    return;
+  }
+
+  int8_t r = fpIdentifyCurrent();
+  if (r == 1) {
+    touchOwner = true;
+    if (!isUnlocked) {
+      lastStatusMsg = "Van tay dung -> Da mo khoa xe";
+      unlockBike();
+      touchWaitRelease = true;
+    } else {
+      lastStatusMsg = "Van tay dung";
+      ledSolid(LEDC_GREEN, 700);
+    }
+  } else if (r == 0) {
+    holdDenied = true;
+    lastStatusMsg = "Van tay khong dung";
+    ledSolid(LEDC_RED, 900);
+    beepBuzzer(1000, 100, 2);
+  } else {
+    ledSolid(LEDC_RED, 300);
+    if (touchTries >= 2) {
+      holdDenied = true;
+      lastStatusMsg = "Anh van tay kem, nhac tay ra va dat lai";
+    } else {
+      touchPoor = true;
+      lastStatusMsg = "Anh van tay kem, giu yen ngon tay...";
+    }
+  }
+}
+
+void handleFingerprintLogic() {
+  if (!fpConnected) {
+    static unsigned long lastTry = 0;
+    if (millis() - lastTry > 5000) {
+      lastTry = millis();
+      if (finger.verifyPassword()) {
+        fpConnected = true;
+        finger.getParameters();
+        if (finger.capacity == 0 || finger.capacity > 1000) finger.capacity = MAX_FP + 1;
+        fpSyncFromModule();
+      }
+    }
+    return;
+  }
+
+  unsigned long now = millis();
+  uint8_t p = finger.getImage();
+
+  if (fpNeedRelease) {
+    if (p == FINGERPRINT_NOFINGER) fpNeedRelease = false;
+    lastFingerState = false;
+    return;
+  }
+
+  bool seen = (p == FINGERPRINT_OK);
+  if (seen) lastFingerSeen = now;
+
+  bool pressed;
+  if (touchActive) {
+    unsigned long grace = (p == FINGERPRINT_NOFINGER) ? FP_RELEASE_DEBOUNCE : FP_ERR_GRACE;
+    pressed = seen || (now - lastFingerSeen < grace);
+  } else {
+    pressed = seen;
+  }
+
+  if (tapCount > 0 && !touchActive && (now - lastTapRelease > FP_TAP_GAP_MS)) {
+    tapCount = 0;
+  }
+
+  if (pressed && !touchActive) {
+    touchActive = true;
+    touchStart = now;
+    touchTries = 0;
+    holdStarted = false;
+    holdDenied = false;
+    touchWaitRelease = false;
+    fpOnTouchStart();
+    lastFingerSeen = millis();
+    holdBase = lastFingerSeen;
+  }
+
+  if (touchActive && pressed && seen && touchPoor && touchTries < 3 && (millis() - lastVerifyMs > 300)) {
+    touchTries++;
+    fpOnTouchStart();
+    lastFingerSeen = millis();
+    holdBase = lastFingerSeen;
+  }
+
+  if (touchActive && pressed && !touchWaitRelease && isUnlocked && touchOwner && !holdDenied) {
+    unsigned long holdDuration = millis() - holdBase;
+    if (holdDuration > holdStartMs) {
+      holdStarted = true;
+      tapCount = 0;
+
+      if (digitalRead(SIDESTAND_PIN) == LOW) {
+        holdDenied = true;
+        digitalWrite(RELAY_STARTER, RELAY_OFF);
+        isEngineRunning = false;
+        lastStatusMsg = "Canh bao: Chan chong dang ha!";
+        ledSolid(LEDC_RED, 600);
+        beepBuzzer(3000, 100, 3);
+      } else if (holdDuration > FP_HOLD_MAX_MS) {
+        holdDenied = true;
+        digitalWrite(RELAY_STARTER, RELAY_OFF);
+        isEngineRunning = false;
+        lastStatusMsg = "De qua lau, da ngat relay de";
+        ledSolid(LEDC_RED, 600);
+        beepBuzzer(3000, 100, 2);
+      } else {
+        if (!isEngineRunning) {
+          zwLed(FINGERPRINT_LED_ON, LEDC_GREEN, LEDC_GREEN, 0);
+          ledOffAt = 0;
+        }
+        digitalWrite(RELAY_STARTER, RELAY_ON);
+        isEngineRunning = true;
+        lastStatusMsg = "Dang giu van tay -> De no...";
       }
     }
   }
 
-  if (d.alarm) {
-    document.getElementById('alertCard').classList.add('active-alert');
-    const val = document.getElementById('gAlertValue');
-    val.className = 'value danger';
-    val.innerText = t.alertActive;
+  if (touchActive && !pressed) {
+    touchActive = false;
+    unsigned long dur = lastFingerSeen - touchStart;
+
+    digitalWrite(RELAY_STARTER, RELAY_OFF);
+    isEngineRunning = false;
+
+    if (holdStarted) {
+      ledOff();
+      tapCount = 0;
+      if (!holdDenied) lastStatusMsg = "Da nha van tay, ngat de";
+    } else if (!touchWaitRelease && isUnlocked && touchOwner && dur >= FP_TAP_MIN_MS) {
+      tapCount++;
+      lastTapRelease = millis();
+
+      if (tapCount >= FP_TAPS_TO_LOCK) {
+        tapCount = 0;
+        lockBike();
+        lastStatusMsg = "Cham 3 lan -> Da khoa xe";
+      } else {
+        lastStatusMsg = "Cham " + String(tapCount) + "/" + String(FP_TAPS_TO_LOCK) + " de khoa xe";
+        beepBuzzer(2200, 25, 1);
+      }
+    }
+    holdStarted = false;
+    touchWaitRelease = false;
+    touchPoor = false;
   }
+
+  lastFingerState = touchActive;
 }
 
-function renderConfig(c) {
-  const t = i18n[currentLang];
+void startFpEnroll(int reqId) {
+  if (!fpConnected) {
+    lastStatusMsg = "Cam bien van tay chua ket noi";
+    return;
+  }
+  if (fpEnrolling) {
+    lastStatusMsg = "Dang dang ky van tay roi";
+    return;
+  }
 
-  const curOdo = c.odo || 0;
-  const oilRem = ((c.lastOilOdo || 0) + (c.oilKm || 0)) - curOdo;
-  document.getElementById('gOdo').innerText = `${curOdo} km`;
-  const oilRemElem = document.getElementById('gOilRem');
-  oilRemElem.innerText = `${oilRem} km`;
-  oilRemElem.className = oilRem <= 0 ? "value danger" : (oilRem <= 200 ? "value warn" : "value on");
+  int id = reqId;
+  if (id < 1 || id > MAX_FP) {
+    id = 0;
+    for (int i = 1; i <= MAX_FP; i++) {
+      if (!fpHasId(i)) { id = i; break; }
+    }
+  }
+  if (id == 0) {
+    lastStatusMsg = "Da day bo nho van tay";
+    return;
+  }
 
-  const fpContainer = document.getElementById('fpContainer');
-  if (fpContainer && Array.isArray(c.fps)) {
-    if (c.fps.length === 0) {
-      fpContainer.innerHTML = `<div style="font-size:12px; color:var(--subtext); text-align:center; padding:6px;">${t.fpEmpty}</div>`;
+  digitalWrite(RELAY_STARTER, RELAY_OFF);
+  isEngineRunning = false;
+  tapCount = 0;
+  touchActive = false;
+  touchWaitRelease = false;
+  ledOffAt = 0;
+
+  fpEnrollId = id;
+  fpStep = 0;
+  fpPhase = 0;
+  fpFailCount = 0;
+  fpStepTimer = millis();
+  fpEnrolling = true;
+  lastStatusMsg = "Dang ky ID " + String(id) + ": dat ngon tay lan 1/" + String(FP_ENROLL_SCANS);
+  beepBuzzer(2000, 60, 1);
+}
+
+void cancelFpEnroll(const char *msg) {
+  fpEnrolling = false;
+  fpStep = 0;
+  lastStatusMsg = msg;
+  lastFingerState = false;
+  touchActive = false;
+  fpNeedRelease = true;
+  ledSolid(LEDC_RED, 600);
+  beepBuzzer(1000, 100, 2);
+}
+
+void handleFpEnroll() {
+  if (!fpEnrolling) return;
+
+  if (millis() - fpStepTimer > FP_ENROLL_TIMEOUT) {
+    cancelFpEnroll("Het thoi gian, huy dang ky van tay");
+    return;
+  }
+
+  uint8_t p = finger.getImage();
+
+  if (fpPhase == 1) {
+    if (p == FINGERPRINT_NOFINGER) {
+      fpPhase = 0;
+      fpStepTimer = millis();
+    }
+    return;
+  }
+
+  if (p != FINGERPRINT_OK) return;
+
+  uint8_t slot = (fpStep == 0) ? 1 : 2;
+  bool ok = true;
+  const char *err = "";
+
+  if (finger.image2Tz(slot) != FINGERPRINT_OK) {
+    ok = false;
+    err = "Anh kem, nhac tay ra va dat lai";
+  } else if (fpStep > 0 && finger.createModel() != FINGERPRINT_OK) {
+    ok = false;
+    err = "Khong khop lan dau, dat dung ngon cu";
+  }
+
+  if (!ok) {
+    fpFailCount++;
+    ledSolid(LEDC_RED, 500);
+    beepBuzzer(1000, 80, 2);
+    if (fpFailCount >= 4) {
+      cancelFpEnroll("Dang ky that bai, thu lai tu dau");
+      return;
+    }
+    lastStatusMsg = String(err) + " (lan " + String(fpStep + 1) + "/" + String(FP_ENROLL_SCANS) + ")";
+    fpPhase = 1;
+    fpStepTimer = millis();
+    return;
+  }
+
+  fpStep++;
+  fpFailCount = 0;
+  ledBlink(LEDC_GREEN, 2, 150, 100, 2500);
+
+  if (fpStep >= FP_ENROLL_SCANS) {
+    uint8_t r = finger.storeModel(fpEnrollId);
+    fpEnrolling = false;
+    if (r == FINGERPRINT_OK) {
+      if (!fpHasId(fpEnrollId)) fpIds.push_back(fpEnrollId);
+      saveAllSettings();
+      configDirty = true;
+      lastStatusMsg = "Da luu van tay ID " + String(fpEnrollId);
+      delay(250);
+      ledBlink(LEDC_GREEN, 5, 200, 200, 2500);
     } else {
-      fpContainer.innerHTML = c.fps.map(id => `
-        <div class="contact-item">
-          <span style="font-size:13px; font-weight:600;">🖐️ ID #${id}</span>
-          <button class="mini-btn" style="border-color:var(--pink); color:var(--pink);" onclick="deleteFp(${id})">${t.btnDelete}</button>
-        </div>
-      `).join('');
+      lastStatusMsg = "Luu van tay that bai (ma " + String(r) + ")";
+      ledSolid(LEDC_RED, 800);
+      beepBuzzer(1000, 150, 2);
+    }
+    lastFingerState = false;
+    touchActive = false;
+    fpNeedRelease = true;
+    fpStep = 0;
+    return;
+  }
+
+  lastStatusMsg = "Tot! Nhac tay ra, quet lan " + String(fpStep + 1) + "/" + String(FP_ENROLL_SCANS);
+  fpPhase = 1;
+  fpStepTimer = millis();
+}
+
+void checkAutoSleep() {
+  if (sleepSec == 0) {
+    if (ecoActive) exitEco();
+    return;
+  }
+  if (isUnlocked || bleConnected || fpEnrolling || isAddingRfid) return;
+  if (millis() - lastActivityMs < sleepSec * 1000UL) return;
+
+  bool useEco = (sleepMode == 1) || !SLEEP_ENABLED;
+  if (useEco) {
+    if (!ecoActive) enterEco();
+    return;
+  }
+
+#if SLEEP_ENABLED
+  if (digitalRead(FP_WAKE_PIN) == HIGH) {
+    lastActivityMs = millis();
+    return;
+  }
+  enterLightSleep();
+#endif
+}
+
+static void setAdvInterval(bool slow) {
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+  if (!bleConnected) adv->stop();
+  adv->setMinInterval(slow ? 0x640 : 0x20);
+  adv->setMaxInterval(slow ? 0x7D0 : 0x40);
+  if (!bleConnected) BLEDevice::startAdvertising();
+}
+
+void enterEco() {
+  if (ecoActive) return;
+  ecoActive = true;
+  setCpuFrequencyMhz(80);
+  setAdvInterval(true);
+}
+
+void exitEco() {
+  if (!ecoActive) return;
+  ecoActive = false;
+  setCpuFrequencyMhz(normalCpuMhz);
+  setAdvInterval(false);
+}
+
+void enterLightSleep() {
+#if SLEEP_ENABLED
+  digitalWrite(RELAY_STARTER, RELAY_OFF);
+  digitalWrite(RELAY_POWER, RELAY_OFF);
+  digitalWrite(LED_D2_PIN, LOW);
+  setFingerLED(FINGERPRINT_LED_OFF, 0x00, 0x00, 0);
+  delay(20);
+
+  BLEDevice::getAdvertising()->stop();
+  BLEDevice::deinit(false);
+  pServer = nullptr; chCmd = nullptr; chStatus = nullptr; chConfig = nullptr;
+  bleConnected = false;
+  bleAuthed = false;
+
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)FP_WAKE_PIN, 1);
+  rtc_gpio_pullup_dis((gpio_num_t)FP_WAKE_PIN);
+  rtc_gpio_pulldown_en((gpio_num_t)FP_WAKE_PIN);
+
+  esp_light_sleep_start();
+
+#if SLEEP_WAKE_RESTART
+  ESP.restart();
+#endif
+#endif
+}
+
+uint8_t zwLed(uint8_t mode, uint8_t startColor, uint8_t endColor, uint8_t loops) {
+  if (!fpConnected) return 0xFF;
+
+  uint8_t pkt[16];
+  uint8_t n = 0;
+  pkt[n++] = 0xEF; pkt[n++] = 0x01;
+  pkt[n++] = 0xFF; pkt[n++] = 0xFF; pkt[n++] = 0xFF; pkt[n++] = 0xFF;
+  pkt[n++] = 0x01;
+  pkt[n++] = 0x00; pkt[n++] = 0x07;
+  pkt[n++] = 0x3C;
+  pkt[n++] = mode; pkt[n++] = startColor; pkt[n++] = endColor; pkt[n++] = loops;
+  uint16_t sum = 0;
+  for (uint8_t i = 6; i < n; i++) sum += pkt[i];
+  pkt[n++] = (uint8_t)(sum >> 8);
+  pkt[n++] = (uint8_t)(sum & 0xFF);
+
+  while (fingerSerial.available()) fingerSerial.read();
+  fingerSerial.write(pkt, n);
+  fingerSerial.flush();
+
+  uint8_t rx[12];
+  uint8_t got = 0;
+  unsigned long t0 = millis();
+  while (got < 12 && millis() - t0 < 80) {
+    if (fingerSerial.available()) rx[got++] = (uint8_t)fingerSerial.read();
+  }
+  uint8_t code = (got >= 10) ? rx[9] : 0xFF;
+  return code;
+}
+
+void setFingerLED(uint8_t control, uint8_t speed, uint8_t color, uint8_t count) {
+  (void)speed;
+  zwLed(control, color, color, count);
+}
+
+void ledOff() {
+  ledOffAt = 0;
+  zwLed(FINGERPRINT_LED_OFF, 0, 0, 0);
+}
+
+void ledSolid(uint8_t color, uint16_t ms) {
+  zwLed(FINGERPRINT_LED_ON, color, color, 0);
+  ledOffAt = millis() + ms;
+  if (ledOffAt == 0) ledOffAt = 1;
+}
+
+void ledBlink(uint8_t color, uint8_t times, uint16_t onMs, uint16_t offMs, uint16_t beepFreq) {
+  ledOffAt = 0;
+  for (uint8_t i = 0; i < times; i++) {
+    zwLed(FINGERPRINT_LED_ON, color, color, 0);
+    if (beepFreq) buzzOn(beepFreq);
+    delay(onMs);
+    if (beepFreq) buzzOff();
+    zwLed(FINGERPRINT_LED_OFF, 0, 0, 0);
+    delay(offMs);
+  }
+}
+
+void ledService() {
+  if (ledTestCode) {
+    if ((long)(millis() - ledTestNext) >= 0) {
+      if (ledTestCode > 7) {
+        ledTestCode = 0;
+        ledOff();
+        lastStatusMsg = "Het thu mau LED";
+      } else {
+        zwLed(FINGERPRINT_LED_ON, ledTestCode, ledTestCode, 0);
+        lastStatusMsg = "Thu LED: ma mau " + String(ledTestCode);
+        ledTestCode++;
+        ledTestNext = millis() + 2500;
+      }
+    }
+    return;
+  }
+  if (ledOffAt && (long)(millis() - ledOffAt) >= 0) {
+    ledOffAt = 0;
+    ledOff();
+  }
+
+  if (!isUnlocked && !fpEnrolling && !touchActive && !ledOffAt) {
+    static bool lastLockState = false;
+    if (!lastLockState) {
+      ledOff();
+      lastLockState = true;
+    }
+    return;
+  } else {
+    static bool lastLockState = false;
+    lastLockState = false;
+  }
+
+  if (isUnlocked && !fpEnrolling && !touchActive && !ledOffAt) {
+    static unsigned long unlockColorTimer = 0;
+    static uint8_t currentUnlockColor = 1;
+    
+    if (millis() - unlockColorTimer > 4500) {
+      unlockColorTimer = millis();
+      zwLed(FINGERPRINT_LED_BREATHING, currentUnlockColor, currentUnlockColor, 1);
+      currentUnlockColor++;
+      if (currentUnlockColor > 7) {
+        currentUnlockColor = 1;
+      }
     }
   }
+}
 
-  const rfidContainer = document.getElementById('rfidContainer');
-  const cards = c.cards;
-  if (rfidContainer && Array.isArray(cards)) {
-    if (cards.length === 0) {
-      rfidContainer.innerHTML = `<div style="font-size:12px; color:var(--subtext); text-align:center; padding:6px;">${L('Chưa có thẻ nào được lưu', 'No RFID cards saved')}</div>`;
-    } else {
-      rfidContainer.innerHTML = cards.map((uid, idx) => `
-        <div class="contact-item">
-          <span style="font-size:13px; font-weight:600;">💳 STT #${idx}: ${uid}</span>
-          <button class="mini-btn" style="border-color:var(--pink); color:var(--pink);" onclick="deleteRfid(${idx})">${t.btnDelete}</button>
-        </div>
-      `).join('');
-    }
+void beepBuzzer(uint16_t freq, uint16_t duration, uint8_t count) {
+  for (uint8_t i = 0; i < count; i++) {
+    buzzOn(freq);
+    delay(duration);
+    buzzOff();
+    delay(10);
+  }
+  buzzOff();
+}
+
+void printSystemStatusToSerial() {
+  Serial.println("\n==================== [ REAL-TIME MONITOR ] ====================");
+  Serial.printf("Trang thai: %s | Dong co: %s\n", isUnlocked ? "MO KHOA" : "DA KHOA", isEngineRunning ? "DANG DE" : "TAT");
+  Serial.printf("Dien ap: %.1fV\n", readBatteryVolt());
+  Serial.printf("RFID: %s | ZW101: %s | Van tay da dang ky: %d | BLE: %s%s\n", rfidOk ? "OK" : "ERR", fpConnected ? "OK" : "ERR",
+                (int)fpIds.size(), bleConnected ? "da ket noi" : "dang quang ba", bleAuthed ? " (da xac thuc)" : "");
+  Serial.printf("Thong diep: %s\n", lastStatusMsg.c_str());
+  Serial.println("===============================================================\n");
+}
+
+void loadAllSettings() {
+  prefs.begin("bike_cfg", true);
+  bleName = prefs.getString("bleName", "HQT-KhoaXe");
+  blePin = prefs.getString("blePin", "123456");
+  starterTimeMs = prefs.getUInt("starterTime", 1500);
+  holdStartMs = prefs.getUInt("holdMs", FP_HOLD_START_MS);
+  if (holdStartMs < FP_HOLD_MIN_MS) holdStartMs = FP_HOLD_MIN_MS;
+  if (holdStartMs > FP_HOLD_MAX_CFG_MS) holdStartMs = FP_HOLD_MAX_CFG_MS;
+  delaySec = prefs.getUInt("delaySec", 3);
+  sleepSec = prefs.getUInt("sleepSec", 120);
+  sleepMode = prefs.getUChar("sleepMode", 1);
+  odometerKm = prefs.getUInt("odo", 0);
+  oilLimitKm = prefs.getUInt("oilKm", 1500);
+  oilLimitDays = prefs.getUInt("oilDays", 90);
+  lastOilOdo = prefs.getUInt("lastOilOdo", 0);
+  oilDate = prefs.getString("oilDate", "");
+  servDate = prefs.getString("servDate", "");
+  airDate = prefs.getString("airDate", "");
+  findMelodyMode = prefs.getUChar("melody", 0);
+  findRepeatTimes = prefs.getUChar("repTimes", 5);
+
+  String rfidCsv = prefs.getString("rfidList", "");
+  validRfidUIDs.clear();
+  int start = 0;
+  while (start < (int)rfidCsv.length()) {
+    int comma = rfidCsv.indexOf(',', start);
+    if (comma == -1) comma = rfidCsv.length();
+    String val = rfidCsv.substring(start, comma);
+    if (val.length() > 0) validRfidUIDs.push_back(val);
+    start = comma + 1;
   }
 
-  if (!fieldsLoaded) {
-    document.getElementById('bleNameInput').value = c.name || '';
-    document.getElementById('delaySec').value = c.delay || '';
-    document.getElementById('starterMs').value = c.starterMs || '';
-    document.getElementById('sleepSec').value = (c.sleepSec !== undefined) ? c.sleepSec : '';
-    document.getElementById('sleepMode').value = (c.sleepMode === 0) ? '0' : '1';
-    document.getElementById('odoKmInput').value = c.odo !== undefined ? c.odo : '';
-    document.getElementById('oilLimitKm').value = c.oilKm || '';
-    document.getElementById('oilLimitDays').value = c.oilDays || '';
-    document.getElementById('oilDate').value = c.oilDate || '';
-    document.getElementById('serviceDate').value = c.servDate || '';
-    document.getElementById('airFilterDate').value = c.airDate || '';
-    if (c.melody !== undefined) {
-      document.getElementById('findMelodySelect').value = c.melody;
-    }
-    fieldsLoaded = true;
+  String fpCsv = prefs.getString("fpList", "");
+  fpIds.clear();
+  start = 0;
+  while (start < (int)fpCsv.length()) {
+    int comma = fpCsv.indexOf(',', start);
+    if (comma == -1) comma = fpCsv.length();
+    int v = fpCsv.substring(start, comma).toInt();
+    if (v >= 1 && v <= MAX_FP) fpIds.push_back((uint16_t)v);
+    start = comma + 1;
   }
+  prefs.end();
 }
 
-let fpWasEnrolling = false;
+void saveAllSettings() {
+  prefs.begin("bike_cfg", false);
+  prefs.putString("bleName", bleName);
+  prefs.putString("blePin", blePin);
+  prefs.putUInt("starterTime", starterTimeMs);
+  prefs.putUInt("holdMs", holdStartMs);
+  prefs.putUInt("delaySec", delaySec);
+  prefs.putUInt("sleepSec", sleepSec);
+  prefs.putUChar("sleepMode", sleepMode);
+  prefs.putUInt("odo", odometerKm);
+  prefs.putUInt("oilKm", oilLimitKm);
+  prefs.putUInt("oilDays", oilLimitDays);
+  prefs.putUInt("lastOilOdo", lastOilOdo);
+  prefs.putString("oilDate", oilDate);
+  prefs.putString("servDate", servDate);
+  prefs.putString("airDate", airDate);
+  prefs.putUChar("melody", findMelodyMode);
+  prefs.putUChar("repTimes", findRepeatTimes);
 
-function addFingerprint() {
-  send('addfp', i18n[currentLang].fpScanHint);
-}
-
-function cancelFp() {
-  send('cancelfp', i18n[currentLang].msgFpCancel);
-}
-
-function deleteFp(id) {
-  send('delfp:' + parseInt(id, 10), i18n[currentLang].msgDelFp + id);
-}
-
-function clearFps() {
-  if (!confirm(i18n[currentLang].confirmClearFp)) return;
-  send('clrfp', i18n[currentLang].msgFpClear);
-}
-
-function deleteRfid(specificIndex) {
-  const rid = (specificIndex !== undefined) ? specificIndex : document.getElementById('rid').value;
-  if (rid === "" || rid === null) return;
-  send('delrfid:' + parseInt(rid, 10), i18n[currentLang].msgDelRfid + rid);
-}
-
-function saveFindMelody() {
-  const m = document.getElementById('findMelodySelect').value;
-  send('melody:' + m, i18n[currentLang].msgSavedMelody);
-}
-
-function saveOdo() {
-  const odo = parseInt(document.getElementById('odoKmInput').value, 10);
-  if (isNaN(odo) || odo < 0) { showToast(L('⚠️ Số KM không hợp lệ!', '⚠️ Invalid value!')); return; }
-  send('odo:' + odo, i18n[currentLang].msgSavedOdo);
-}
-
-function saveOilConfig() {
-  const km = parseInt(document.getElementById('oilLimitKm').value, 10);
-  const days = parseInt(document.getElementById('oilLimitDays').value, 10);
-  if (isNaN(km) || km <= 0 || isNaN(days) || days <= 0) {
-    showToast(L('⚠️ Nhập KM và số ngày hợp lệ!', '⚠️ Enter valid km and days!'));
-    return;
+  String rfidCsv = "";
+  for (size_t i = 0; i < validRfidUIDs.size(); i++) {
+    if (i > 0) rfidCsv += ",";
+    rfidCsv += validRfidUIDs[i];
   }
-  send('oil:' + km + ',' + days, i18n[currentLang].msgSavedOilConfig);
-}
+  prefs.putString("rfidList", rfidCsv);
 
-async function saveMaintenance() {
-  const oilD = document.getElementById('oilDate').value;
-  const servD = document.getElementById('serviceDate').value;
-  const airD = document.getElementById('airFilterDate').value;
-  const a = await send('mo:' + oilD, null, true);
-  const b = a && await send('ms:' + servD, null, true);
-  const c = b && await send('ma:' + airD, i18n[currentLang].msgSavedMaint, false);
-}
-
-function saveDelay() {
-  const sec = parseInt(document.getElementById('delaySec').value, 10);
-  if (isNaN(sec) || sec < 1 || sec > 30) { showToast(L('⚠️ Từ 1 đến 30 giây!', '⚠️ 1 to 30 seconds!')); return; }
-  send('delay:' + sec, i18n[currentLang].msgSavedDelay);
-}
-
-async function saveSleep() {
-  const s = parseInt(document.getElementById('sleepSec').value, 10);
-  const mode = document.getElementById('sleepMode').value === '0' ? 0 : 1;
-  if (isNaN(s) || s < 0 || s > 3600 || (s > 0 && s < 30)) {
-    showToast(L('⚠️ Nhập 0 (tắt) hoặc từ 30 đến 3600 giây!', '⚠️ Enter 0 (off) or 30-3600 seconds!'));
-    return;
+  String fpCsv = "";
+  for (size_t i = 0; i < fpIds.size(); i++) {
+    if (i > 0) fpCsv += ",";
+    fpCsv += String(fpIds[i]);
   }
-  const a = await send('sleepmode:' + mode, null, true);
-  if (a) await send('sleep:' + s, i18n[currentLang].msgSavedSleep);
+  prefs.putString("fpList", fpCsv);
+  prefs.end();
 }
-
-function saveStarterTime() {
-  const ms = parseInt(document.getElementById('starterMs').value, 10);
-  if (isNaN(ms) || ms < 500 || ms > 10000) {
-    showToast(L('⚠️ Thời gian đề từ 500 đến 10000 ms!', '⚠️ Starter time must be 500-10000 ms!'));
-    return;
-  }
-  send('starter:' + ms, i18n[currentLang].msgSavedStarter);
-}
-
-async function saveBleName() {
-  const name = document.getElementById('bleNameInput').value.trim();
-  if (name.length < 1 || name.length > 12) {
-    showToast(L('⚠️ Tên từ 1 đến 12 ký tự!', '⚠️ Name must be 1-12 chars!'));
-    return;
-  }
-  const ok = await send('name:' + name, L('🔄 Đã lưu tên, ESP32 đang khởi động lại...', '🔄 Saved, restarting...'), true);
-  if (ok) {
-    bleDevice = null;
-    setTimeout(disconnectBle, 800);
-  }
-}
-
-async function savePin() {
-  const pin = document.getElementById('newPin').value.trim();
-  if (!/^\d{4,8}$/.test(pin)) { showToast(L('⚠️ PIN gồm 4-8 chữ số!', '⚠️ PIN must be 4-8 digits!')); return; }
-  const ok = await send('pin:' + pin, L('🔑 Đã đổi PIN!', '🔑 PIN changed!'), true);
-  if (ok) {
-    try { localStorage.setItem('savedPin', pin); } catch (e) {}
-    document.getElementById('pinInput').value = pin;
-    document.getElementById('newPin').value = '';
-  }
-}
-
-try { document.getElementById('pinInput').value = localStorage.getItem('savedPin') || ''; } catch (e) {}
-updateLanguageUI();
-if (!navigator.bluetooth) {
-  setConnMsg(L(
-    'Trình duyệt này không hỗ trợ Web Bluetooth. iPhone: mở trang bằng Bluefy. Android: dùng Chrome.',
-    'This browser has no Web Bluetooth. iPhone: open in Bluefy. Android: use Chrome.'), true);
-}
-</script>
-</body>
-</html>
