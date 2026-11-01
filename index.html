@@ -521,12 +521,12 @@
 
     <div class="section-title" data-i18n="sleepTitle">Tự động ngủ nông</div>
     <div class="wifi-block">
-      <span data-i18n="sleepDesc">Vào chế độ ngủ sau (giây) khi khoá xe và không dùng. 0 = tắt.</span>
+      <span data-i18n="sleepDesc">Vào chế độ ngủ sau (giây, từ 10 đến 100) khi khoá xe và không dùng. 0 = tắt.</span>
       <select id="sleepMode" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); font-size:14px;">
         <option value="1" data-i18n="sleepModeEco">Tiết kiệm (vẫn phát Bluetooth)</option>
         <option value="0" data-i18n="sleepModeDeep">Ngủ hẳn (chạm vân tay để đánh thức)</option>
       </select>
-      <input id="sleepSec" type="number" min="0" max="3600" placeholder="Ví dụ: 120">
+      <input id="sleepSec" type="number" min="0" max="100" placeholder="Ví dụ: 60 (10–100, 0 = tắt)">
       <button class="btn btn-add" data-i18n="btnSaveSleep" onclick="saveSleep()">Lưu thời gian ngủ</button>
     </div>
 
@@ -869,7 +869,7 @@ Object.assign(i18n.vi, {
   connHint: "Bật Bluetooth, đứng gần xe, nhập PIN rồi bấm Kết nối.",
   btnConnect: "🔵 KẾT NỐI BLUETOOTH",
   sleepTitle: "Tự động ngủ nông",
-  sleepDesc: "Vào chế độ ngủ sau (giây) khi khoá xe và không dùng. 0 = tắt.",
+  sleepDesc: "Vào chế độ ngủ sau (giây, từ 10 đến 100) khi khoá xe và không dùng. 0 = tắt.",
   sleepModeEco: "Tiết kiệm (vẫn phát Bluetooth)",
   sleepModeDeep: "Ngủ hẳn (chạm vân tay để đánh thức)",
   btnSaveSleep: "Lưu thời gian ngủ",
@@ -920,7 +920,7 @@ Object.assign(i18n.eng, {
   connHint: "Turn on Bluetooth, stay near the bike, enter PIN and tap Connect.",
   btnConnect: "🔵 CONNECT BLUETOOTH",
   sleepTitle: "Auto light sleep",
-  sleepDesc: "Enter sleep after (seconds) when locked and idle. 0 = off.",
+  sleepDesc: "Enter sleep after (seconds, 10 to 100) when locked and idle. 0 = off.",
   sleepModeEco: "Eco (Bluetooth stays visible)",
   sleepModeDeep: "Deep (touch fingerprint to wake)",
   btnSaveSleep: "Save sleep time",
@@ -1391,8 +1391,8 @@ function saveDelay() {
 async function saveSleep() {
   const s = parseInt(document.getElementById('sleepSec').value, 10);
   const mode = document.getElementById('sleepMode').value === '0' ? 0 : 1;
-  if (isNaN(s) || s < 0 || s > 3600 || (s > 0 && s < 30)) {
-    showToast(L('⚠️ Nhập 0 (tắt) hoặc từ 30 đến 3600 giây!', '⚠️ Enter 0 (off) or 30-3600 seconds!'));
+  if (isNaN(s) || s < 0 || s > 100 || (s > 0 && s < 10)) {
+    showToast(L('⚠️ Nhập 0 (tắt) hoặc từ 10 đến 100 giây!', '⚠️ Enter 0 (off) or 10-100 seconds!'));
     return;
   }
   const a = await send('sleepmode:' + mode, null, true);
