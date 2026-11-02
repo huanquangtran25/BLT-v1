@@ -199,7 +199,7 @@
     #bgLayer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
     #aurora { position: absolute; inset: 0; --p1: #38bdf8; --p2: #a78bfa; --p3: #34d399;
       background: linear-gradient(125deg, color-mix(in srgb, var(--p1) 20%, var(--bg)), color-mix(in srgb, var(--p2) 20%, var(--bg)) 50%, color-mix(in srgb, var(--p3) 20%, var(--bg)));
-      background-size: 260% 260%; animation: gradShift 36s ease-in-out infinite alternate; }
+      background-size: 260% 260%; background-position: 40% 50%; }
     @keyframes gradShift { from { background-position: 0% 30%; } to { background-position: 100% 70%; } }
     #aurora i { position: absolute; width: 85vmax; height: 85vmax; border-radius: 50%; opacity: .6; will-change: transform; }
     #aurora i:nth-child(1) { left: -35vmax; top: -40vmax; background: radial-gradient(circle, color-mix(in srgb, var(--p1) 55%, transparent), transparent 62%); animation: drift1 24s ease-in-out infinite alternate; }
@@ -387,6 +387,30 @@
     /* nền kính cần màu để khúc xạ: tăng nhẹ vệt sáng khi bật kính */
     body:not(.fx-off-glass) #aurora i { opacity: .85; }
 
+
+    /* ================= HIỆU NĂNG ================= */
+    /* chỉ các khối lớn mới làm mờ nền; phần nhỏ dùng nền đặc hơn */
+    body:not(.fx-off-glass) .chip, body:not(.fx-off-glass) .icon-btn, body:not(.fx-off-glass) .brand-mark, body:not(.fx-off-glass) .card-alert {
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+      background: var(--g-spec), var(--g-fill), color-mix(in srgb, var(--card) 62%, transparent);
+    }
+    body:not(.fx-off-glass) .hero, body:not(.fx-off-glass) .panel, body:not(.fx-off-glass) .act, body:not(.fx-off-glass) details.group, body:not(.fx-off-glass) #connectModal .modal-content {
+      -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5);
+    }
+    body:not(.fx-off-glass) #settingsModal .modal-content { -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5); }
+    /* mở cài đặt: tạm dừng nền để khỏi phải làm mờ lại liên tục */
+    body.modal-open #aurora i, body.modal-open #fxCanvas { animation-play-state: paused !important; }
+    /* chế độ mượt: không làm mờ nền, thẻ đặc hơn */
+    body.lite *, body.lite *::before, body.lite *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+    body.lite { --g-tint: color-mix(in srgb, var(--card) 86%, transparent) !important; }
+    body.lite #settingsModal .modal-content { background: var(--bg) !important; }
+    body.lite .modal-overlay { background: rgba(5,8,12,.6) !important; }
+    body.lite .toast { background: var(--card2) !important; }
+    body.lite .hero::after { animation: none; opacity: .5; }
+    body.lite .act-start::after { display: none; }
+    body.lite #aurora i { animation-duration: 60s !important; }
+    body.lite #fxCanvas { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
     }
@@ -533,7 +557,7 @@
     <hr>
     © 2026 Huân Quang Trần. Bản quyền phần mềm thuộc về tác giả.<br>
     Hân hạnh được phục vụ mọi người.
-    <div class="ver" id="verTag">Giao diện v5 · nền động + kính lỏng</div>
+    <div class="ver" id="verTag">Giao diện v7 · nền động + kính lỏng + chế độ mượt</div>
     <div class="wish">chúc bạn có một trải nghiệm đáng để trải nghiệm :)))</div>
   </footer>
 </main>
@@ -592,6 +616,16 @@
     <details class="group">
       <summary><span class="gi"><svg class="i"><use href="#i-sparkle"/></svg></span><span data-i18n="grpFx">Hiệu ứng chuyển động</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
       <div class="group-body">
+        <div class="section-title" data-i18n="perfTitle">Hiệu năng</div>
+        <div class="wifi-block">
+          <span data-i18n="perfDesc">Nếu máy bị giật hoặc nóng, chọn Mượt. Tự động sẽ tự chuyển sang Mượt khi phát hiện giật.</span>
+          <select id="perfMode" onchange="setPerf(this.value)">
+            <option value="auto" data-i18n="perfAuto">Tự động</option>
+            <option value="lite" data-i18n="perfLite">Mượt (nhẹ máy)</option>
+            <option value="full" data-i18n="perfFull">Đẹp (đầy đủ)</option>
+          </select>
+        </div>
+
         <div class="section-title" data-i18n="fxPreset">Mức hiệu ứng</div>
         <div class="seg">
           <button class="mini-btn" id="fxP0" onclick="fxPreset(0)" data-i18n="fxOffAll">Tắt hết</button>
@@ -671,6 +705,13 @@
           <span data-i18n="holdDesc">Giữ vân tay lâu hơn số ms này thì đề. Chạm ngắn hơn chỉ tính là chạm để khoá (3 lần chạm = khoá xe), không bao giờ đề. Từ 400 đến 3000.</span>
           <input id="holdMs" type="number" min="400" max="3000" step="100" placeholder="Ví dụ: 800">
           <button class="btn btn-add" data-i18n="btnSaveHold" onclick="saveHoldTime()">Lưu thời gian giữ</button>
+        </div>
+
+        <div class="section-title" data-i18n="tapGapTitle">Thời gian chạm 3 lần để khoá</div>
+        <div class="wifi-block">
+          <span data-i18n="tapGapDesc">Thời gian chờ tối đa giữa 2 lần chạm. Đặt ngắn hơn thì phải chạm nhanh hơn, ít bị khoá nhầm; đặt dài hơn thì chạm chậm vẫn tính. Từ 100 đến 1000 ms.</span>
+          <input id="tapGapMs" type="number" min="100" max="1000" step="50" placeholder="Ví dụ: 600">
+          <button class="btn btn-add" data-i18n="btnSaveTapGap" onclick="saveTapGap()">Lưu thời gian chạm</button>
         </div>
       </div>
     </details>
@@ -1544,6 +1585,7 @@ function renderConfig(c) {
     document.getElementById('delaySec').value = c.delay || '';
     document.getElementById('starterMs').value = c.starterMs || '';
     document.getElementById('holdMs').value = c.holdMs || '';
+    { const tg = document.getElementById('tapGapMs'); if (tg) tg.value = c.tapGapMs || ''; }
     if (c.findPat !== undefined) { document.getElementById('findPat').value = String(c.findPat); renderFindPreview(); }
     document.getElementById('findRep').value = c.findRep || '';
     document.getElementById('sleepSec').value = (c.sleepSec !== undefined) ? c.sleepSec : '';
@@ -1684,6 +1726,15 @@ function saveVcal() {
 function resetVcal() {
   if (!confirm(i18n[currentLang].confirmResetVcal)) return;
   send('vcalreset', i18n[currentLang].msgResetVcal);
+}
+
+function saveTapGap() {
+  const ms = parseInt(document.getElementById('tapGapMs').value, 10);
+  if (isNaN(ms) || ms < 100 || ms > 1000) {
+    showToast(L('⚠️ Thời gian chạm từ 100 đến 1000 ms!', '⚠️ Tap window must be 100-1000 ms!'));
+    return;
+  }
+  send('tapgap:' + ms, L('👆 Đã lưu thời gian chạm 3 lần', '👆 Triple-tap window saved'));
 }
 
 function saveHoldTime() {
@@ -2066,6 +2117,9 @@ new MutationObserver(() => document.body.classList.toggle('finding', alertEl.cla
 })();
 
 
+Object.assign(i18n.vi, { tapGapTitle: "Thời gian chạm 3 lần để khoá", tapGapDesc: "Thời gian chờ tối đa giữa 2 lần chạm. Đặt ngắn hơn thì phải chạm nhanh hơn, ít bị khoá nhầm; đặt dài hơn thì chạm chậm vẫn tính. Từ 100 đến 1000 ms.", btnSaveTapGap: "Lưu thời gian chạm" });
+Object.assign(i18n.eng, { tapGapTitle: "Triple-tap window to lock", tapGapDesc: "Maximum wait between two taps. Shorter means you must tap faster (fewer accidental locks); longer lets slow taps count. 100-1000 ms.", btnSaveTapGap: "Save tap window" });
+
 // ================== NỀN ĐỘNG CÓ SẴN (bổ sung) ==================
 Object.assign(i18n.vi, { bgPresetLabel: "Nền động có sẵn", bgpAurora: "Cực quang", bgpSunset: "Hoàng hôn", bgpOcean: "Đại dương", bgpNeon: "Neon", bgpForest: "Rừng đêm" });
 Object.assign(i18n.eng, { bgPresetLabel: "Built-in animated backdrop", bgpAurora: "Aurora", bgpSunset: "Sunset", bgpOcean: "Ocean", bgpNeon: "Neon", bgpForest: "Night forest" });
@@ -2084,6 +2138,47 @@ function setBgPreset(name) {
   const s = document.getElementById('bgPreset'); if (s && s.value !== name) s.value = name;
 }
 (function () { const n = lsGet('bgPreset') || 'aurora'; setBgPreset(BG_PRESETS[n] ? n : 'aurora'); })();
+
+
+// ================== HIỆU NĂNG: tự phát hiện giật (bổ sung) ==================
+Object.assign(i18n.vi, { perfTitle: "Hiệu năng", perfDesc: "Nếu máy bị giật hoặc nóng, chọn Mượt. Tự động sẽ tự chuyển sang Mượt khi phát hiện giật.", perfAuto: "Tự động", perfLite: "Mượt (nhẹ máy)", perfFull: "Đẹp (đầy đủ)" });
+Object.assign(i18n.eng, { perfTitle: "Performance", perfDesc: "If your phone lags or gets hot, choose Smooth. Auto switches to Smooth when lag is detected.", perfAuto: "Auto", perfLite: "Smooth (light)", perfFull: "Beautiful (full)" });
+let perfMode = lsGet('perf') || 'auto';
+function applyPerf() {
+  const lite = perfMode === 'lite' || (perfMode === 'auto' && lsGet('perfAuto') === 'lite');
+  document.body.classList.toggle('lite', lite);
+  const s = document.getElementById('perfMode'); if (s && s.value !== perfMode) s.value = perfMode;
+}
+function setPerf(m) {
+  perfMode = m; lsSet('perf', m);
+  if (m === 'auto') { try { localStorage.removeItem('perfAuto'); } catch (e) {} perfWatch(); }
+  applyPerf();
+}
+function perfWatch() {
+  let last = 0, n = 0, slow = 0, start = 0;
+  function tick(t) {
+    if (perfMode !== 'auto' || document.body.classList.contains('lite')) return;
+    if (document.hidden) { last = 0; return requestAnimationFrame(tick); }
+    if (last) {
+      const dt = t - last;
+      if (dt < 250) { n++; if (dt > 30) slow++; }
+    }
+    last = t; if (!start) start = t;
+    if (n >= 120) {
+      if (slow / n > 0.35) {
+        lsSet('perfAuto', 'lite'); applyPerf();
+        showToast(L('⚡ Máy hơi giật nên đã chuyển sang chế độ Mượt. Đổi lại trong Cài đặt → Hiệu ứng.', '⚡ Lag detected, switched to Smooth mode. Change it in Settings → Effects.'));
+      }
+      return;
+    }
+    requestAnimationFrame(tick);
+  }
+  setTimeout(() => requestAnimationFrame(tick), 1500);
+}
+document.getElementById('perfMode').value = perfMode;
+applyPerf();
+if (perfMode === 'auto' && lsGet('perfAuto') !== 'lite') perfWatch();
+{ const _tm = toggleModal; toggleModal = function (s) { _tm(s); document.body.classList.toggle('modal-open', !!s); }; }
 
 updateLanguageUI();
 buildFindSelect();
