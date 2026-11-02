@@ -3,569 +3,519 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#10141b">
   <title>HQT Smart Lock</title>
   <style>
     :root {
-      --bg: #0b101d;
-      --card: rgba(21, 29, 46, 0.85);
-      --border: rgba(255, 255, 255, 0.12);
-      --text: #eef2f6;
-      --subtext: #8a97a8;
-      --green: #39ff6a;
-      --pink: #ff3b6f;
-      --cyan: #33e0ff;
-      --amber: #ffb020;
-      --blue: #2f9bff;
-      --purple: #a855f7;
-      --input-bg: #090d14;
-      --shadow: rgba(0,0,0,0.4);
+      --bg: #10141b;
+      --card: #171c25;
+      --card2: #1e2530;
+      --border: rgba(255,255,255,0.09);
+      --text: #e8ecf2;
+      --subtext: #8b95a5;
+      --green: #34d399;
+      --pink: #f87171;
+      --cyan: #38bdf8;
+      --amber: #fbbf24;
+      --blue: #3b82f6;
+      --purple: #a78bfa;
+      --input-bg: #0f131a;
+      --shadow: rgba(0,0,0,0.35);
+      --accent: var(--cyan);
+      --accent-ink: #04202e;
+      --radius: 14px;
     }
-
     [data-theme="light"] {
-      --bg: #eef2f5;
-      --card: rgba(255, 255, 255, 0.88);
-      --border: rgba(0, 0, 0, 0.12);
-      --text: #1a202c;
-      --subtext: #4a5568;
-      --green: #10b981;
-      --pink: #ef4444;
+      --bg: #f2f4f7;
+      --card: #ffffff;
+      --card2: #f6f8fa;
+      --border: rgba(16,24,40,0.10);
+      --text: #101828;
+      --subtext: #5b6472;
+      --green: #059669;
+      --pink: #dc2626;
       --cyan: #0284c7;
-      --amber: #d97706;
+      --amber: #b45309;
       --blue: #2563eb;
-      --purple: #8b5cf6;
-      --input-bg: #f1f5f9;
-      --shadow: rgba(0,0,0,0.1);
+      --purple: #7c3aed;
+      --input-bg: #f2f4f7;
+      --shadow: rgba(16,24,40,0.10);
+      --accent: #0369a1;
+      --accent-ink: #ffffff;
     }
 
-    html, body {
-      width: 100%;
-      height: 100%;
-      overscroll-behavior-y: none;
-      overscroll-behavior-x: none;
-    }
-
-    * {
-      box-sizing: border-box;
-      transition: background 0.3s, color 0.3s, border-color 0.3s;
-    }
-
+    html, body { width: 100%; min-height: 100%; overscroll-behavior: none; }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
-      padding: 18px 14px 30px;
       -webkit-tap-highlight-color: transparent;
-      position: relative;
+      -webkit-font-smoothing: antialiased;
+      font-variant-numeric: tabular-nums;
       overflow-x: hidden;
+      transition: background .25s, color .25s;
     }
+    svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    button { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     #snowCanvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: -1;
-      pointer-events: none;
-      touch-action: none;
-      transform: translate3d(0, 0, 0);
-      will-change: transform;
+      position: fixed !important; top: 0 !important; left: 0 !important;
+      width: 100vw !important; height: 100vh !important;
+      z-index: 0; pointer-events: none; touch-action: none;
     }
 
-    .settings-btn {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      cursor: pointer;
-      box-shadow: 0 4px 12px var(--shadow);
-      z-index: 100;
-      backdrop-filter: blur(8px);
-    }
-    .settings-btn:active { transform: scale(0.92); }
+    .app { position: relative; z-index: 1; max-width: 520px; margin: 0 auto; padding: calc(14px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom)); }
 
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.65);
-      backdrop-filter: blur(6px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
+    /* ---------- top bar ---------- */
+    .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .brand-mark { width: 36px; height: 36px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); display: grid; place-items: center; color: var(--accent); }
+    .brand-name { font-size: 15px; font-weight: 700; letter-spacing: .2px; line-height: 1.15; }
+    .brand-sub { font-size: 11px; color: var(--subtext); }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--card); border: 1px solid var(--border); color: var(--subtext); }
+    .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--subtext); }
+    .chip.live { color: var(--green); }
+    .chip.live .dot { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent); }
+    .icon-btn { width: 38px; height: 38px; border-radius: 11px; background: var(--card); border: 1px solid var(--border); display: grid; place-items: center; cursor: pointer; color: var(--text); }
+    .icon-btn:active { transform: scale(.94); }
+
+    /* ---------- hero ---------- */
+    .hero { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 18px 18px 16px; overflow: hidden; }
+    .hero::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--hero-color, var(--subtext)); transition: background .3s; }
+    .hero[data-state="locked"] { --hero-color: var(--pink); }
+    .hero[data-state="ready"]  { --hero-color: var(--green); }
+    .hero[data-state="running"]{ --hero-color: var(--cyan); }
+    .hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .hero-state { font-size: 26px; font-weight: 750; letter-spacing: -.3px; line-height: 1.1; color: var(--hero-color, var(--text)); }
+    .hero-hint { font-size: 12.5px; color: var(--subtext); margin-top: 6px; line-height: 1.4; max-width: 24ch; }
+    .hero-batt { text-align: right; }
+    .hero-batt .label { font-size: 11.5px; color: var(--subtext); }
+    .hero-batt .value { font-size: 30px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; margin-top: 2px; }
+    .hero-batt #gPowerType { font-size: 11px; color: var(--subtext); margin-top: 3px; }
+
+    .card-alert { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
+    .card-alert .label { font-size: 12px; color: var(--subtext); }
+    .card-alert .value { font-size: 12.5px; font-weight: 700; text-align: right; }
+    .card-alert.active-alert { border-color: var(--pink); background: color-mix(in srgb, var(--pink) 14%, var(--card)); animation: alertPulse 1s infinite alternate; }
+    @keyframes alertPulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pink) 0%, transparent); } to { box-shadow: 0 0 0 4px color-mix(in srgb, var(--pink) 30%, transparent); } }
+
+    .on { color: var(--green); } .off { color: var(--subtext); } .warn { color: var(--amber); } .danger { color: var(--pink); }
+
+    /* ---------- actions ---------- */
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+    .act { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 14px; min-height: 92px; border-radius: 16px; border: 1px solid var(--border); background: var(--card); cursor: pointer; transition: transform .12s, border-color .2s; }
+    .act:active { transform: scale(.97); }
+    .act .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); }
+    .act .t { font-size: 15px; font-weight: 700; line-height: 1.2; display: block; }
+    .act .s { font-size: 11.5px; color: var(--subtext); line-height: 1.3; display: block; margin-top: 2px; }
+    .act-unlock { --c: var(--green); }
+    .act-lock { --c: var(--pink); }
+    .act-start { --c: var(--accent); background: var(--accent); border-color: var(--accent); }
+    .act-start .ico { background: rgba(255,255,255,.22); color: var(--accent-ink); }
+    .act-start .t { color: var(--accent-ink); }
+    .act-start .s { color: color-mix(in srgb, var(--accent-ink) 72%, transparent); }
+    .act-find { --c: var(--purple); }
+
+    /* ---------- info cards ---------- */
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+    .panel-title { margin: 0; padding: 12px 16px 6px; font-size: 13px; font-weight: 650; color: var(--text); }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--border); }
+    .panel-title + .row { border-top: 0; }
+    .row .label { font-size: 13.5px; color: var(--subtext); }
+    .row .value { font-size: 13.5px; font-weight: 650; text-align: right; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; }
+    .stat { padding: 12px 16px 14px; }
+    .stat + .stat { border-left: 1px solid var(--border); }
+    .stat .label { font-size: 12px; color: var(--subtext); }
+    .stat .value { font-size: 20px; font-weight: 700; margin-top: 4px; letter-spacing: -.2px; }
+
+    /* ---------- modal / sheet ---------- */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(5,8,12,.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: flex-end; justify-content: center; z-index: 1000; }
     .modal-overlay.active { display: flex; }
+    .modal-overlay.active .modal-content { animation: sheetUp .28s cubic-bezier(.2,.8,.2,1); }
+    @keyframes sheetUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .modal-content { background: var(--bg); border: 1px solid var(--border); border-bottom: 0; border-radius: 22px 22px 0 0; width: 100%; max-width: 520px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); position: relative; }
+    .modal-header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 16px 0 12px; background: var(--bg); }
+    .modal-header h2 { margin: 0; font-size: 17px; font-weight: 700; }
+    .close-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--subtext); cursor: pointer; display: grid; place-items: center; font-size: 20px; line-height: 1; }
+    #connectModal { align-items: center; padding: 16px; }
+    #connectModal .modal-content { border-radius: 22px; border-bottom: 1px solid var(--border); padding: 26px 22px 22px; width: 100%; max-width: 400px; text-align: center; background: var(--card); }
+    #connectModal .brand-mark { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 15px; background: var(--card2); }
+    #connectModal .brand-mark svg { width: 26px; height: 26px; }
+    .conn-title { margin: 0; font-size: 20px; font-weight: 700; }
+    #connMsg { font-size: 13px; color: var(--subtext); line-height: 1.5; margin: 8px 0 4px; }
+    .conn-input { width: 100%; padding: 13px; border-radius: 12px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 22px; text-align: center; letter-spacing: 8px; margin: 12px 0 8px; }
 
-    .modal-content {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      width: 92%;
-      max-width: 450px;
-      max-height: 85vh;
-      overflow-y: auto;
-      padding: 20px;
-      box-shadow: 0 10px 30px var(--shadow);
-      position: relative;
-    }
+    /* accordion groups */
+    details.group { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; overflow: hidden; }
+    details.group > summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; font-size: 14.5px; font-weight: 650; }
+    details.group > summary::-webkit-details-marker { display: none; }
+    details.group > summary .gi { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--card2); color: var(--accent); }
+    details.group > summary .gi svg { width: 17px; height: 17px; }
+    details.group > summary .chev { margin-left: auto; width: 16px; height: 16px; color: var(--subtext); transition: transform .2s; }
+    details.group[open] > summary .chev { transform: rotate(90deg); }
+    .group-body { padding: 2px 16px 16px; border-top: 1px solid var(--border); }
 
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 10px;
-    }
-    .modal-header h2 { margin: 0; font-size: 18px; color: var(--cyan); }
-    .close-btn { font-size: 24px; cursor: pointer; color: var(--subtext); border: none; background: none; }
+    .section-title { margin: 18px 0 8px; font-size: 12.5px; font-weight: 650; color: var(--subtext); }
+    .group-body > .section-title:first-child { margin-top: 14px; }
+    .wifi-block { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 9px; }
+    .wifi-block > span { font-size: 12.5px; color: var(--subtext); line-height: 1.45; }
+    .wifi-block input, .wifi-block select { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 14.5px; min-height: 42px; }
+    .mgmt-row { display: flex; align-items: center; gap: 10px; background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+    .mgmt-row span { flex: 1; font-size: 13.5px; }
+    .mgmt-row input { width: 72px; padding: 9px; text-align: center; border-radius: 9px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); }
+    .switch-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
+    .switch-row + .switch-row { border-top: 1px solid var(--border); }
 
-    .header-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-top: 10px;
-      margin-bottom: 20px;
-      position: relative;
-      text-align: center;
-    }
-    .logo-wrapper {
-      position: relative;
-      width: 84px;
-      height: 84px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .logo-ring {
-      width: 78px;
-      height: 78px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(51,224,255,0.15) 0%, rgba(11,16,29,0) 70%);
-      border: 2px solid transparent;
-      background-image: linear-gradient(var(--card), var(--card)), 
-                        linear-gradient(135deg, var(--cyan), var(--blue), var(--purple));
-      background-origin: border-box;
-      background-clip: padding-box, border-box;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 20px rgba(51, 224, 255, 0.35);
-    }
-    .logo-wrapper::after {
-      content: '';
-      position: absolute;
-      width: 84px;
-      height: 84px;
-      border-radius: 50%;
-      border: 1.5px dashed var(--cyan);
-      opacity: 0.5;
-      animation: spinRing 12s linear infinite;
-    }
-    @keyframes spinRing { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-    .logo-text {
-      font-weight: 900;
-      font-size: 22px;
-      letter-spacing: 2px;
-      background: linear-gradient(180deg, #ffffff 0%, var(--cyan) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
-    }
-    .brand-wish {
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--subtext);
-      font-style: italic;
-      opacity: 0.9;
-      margin-top: 10px;
-      letter-spacing: 0.3px;
-      line-height: 1.4;
-    }
-
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px 14px;
-      backdrop-filter: blur(8px);
-    }
-    .card .label { font-size: 11px; color: var(--subtext); text-transform: uppercase; letter-spacing: 0.5px; }
-    .card .value { font-size: 16px; font-weight: 700; margin-top: 4px; }
-    .card-highlight { border-color: var(--amber); background: rgba(255, 176, 32, 0.08); }
-    
-    .card-alert {
-      grid-column: span 2;
-      border: 1px solid var(--border);
-      background: var(--card);
-      transition: all 0.3s ease;
-    }
-    .card-alert.active-alert {
-      border-color: var(--pink);
-      background: rgba(255, 59, 111, 0.15);
-      animation: alertPulse 1s infinite alternate;
-    }
-    @keyframes alertPulse {
-      0% { box-shadow: 0 0 5px rgba(255, 59, 111, 0.4); }
-      100% { box-shadow: 0 0 20px rgba(255, 59, 111, 0.9); }
-    }
-
-    .on { color: var(--green); }
-    .off { color: var(--subtext); }
-    .warn { color: var(--amber); }
-    .danger { color: var(--pink); }
-
-    .btn {
-      display: block; width: 100%; padding: 15px; margin: 10px 0; border-radius: 14px;
-      font-size: 15px; font-weight: 700; background: var(--card); cursor: pointer;
-      backdrop-filter: blur(6px); letter-spacing: 0.3px; border: 1.5px solid var(--border);
-    }
-    .btn:active { transform: scale(0.97); }
+    .btn { display: block; width: 100%; padding: 12px 14px; margin: 8px 0 0; border-radius: 11px; font-size: 14px; font-weight: 650; background: transparent; cursor: pointer; border: 1px solid var(--border); color: var(--text); min-height: 44px; }
+    .btn:active { transform: scale(.98); }
+    .btn:disabled { opacity: .5; }
+    .btn-add { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .btn-start { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .btn-lock { border-color: color-mix(in srgb, var(--pink) 55%, transparent); color: var(--pink); }
+    .btn-find { border-color: color-mix(in srgb, var(--purple) 55%, transparent); color: var(--purple); }
     .btn-unlock { border-color: var(--green); color: var(--green); }
-    .btn-lock { border-color: var(--pink); color: var(--pink); }
-    .btn-start { border-color: var(--cyan); color: var(--cyan); }
-    .btn-find { border-color: var(--purple); color: var(--purple); }
-    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .btn-add { border-color: var(--amber); color: var(--amber); }
+    .mini-btn { border: 1px solid var(--border); color: var(--text); background: var(--card2); border-radius: 9px; padding: 8px 13px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 34px; }
+    .copy-btn { color: var(--accent); }
+    .contact-container { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+    .contact-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--card2); border: 1px solid var(--border); border-radius: 11px; padding: 8px 12px; }
+    .contact-link { text-decoration: none; font-size: 13.5px; font-weight: 600; color: var(--accent); flex: 1; }
 
-    .section-title {
-      margin: 18px 0 10px; font-size: 12px; color: var(--subtext); text-transform: uppercase;
-      letter-spacing: 1px; border-bottom: 1px solid var(--border); padding-bottom: 6px;
-    }
-    .mgmt-row {
-      display: flex; align-items: center; gap: 10px; background: var(--card);
-      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
-    }
-    .mgmt-row span { flex: 1; font-size: 14px; color: var(--text); }
-    .mgmt-row input {
-      width: 70px; padding: 8px; text-align: center; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--input-bg); color: var(--text);
-    }
-    .mini-btn { border: 1.5px solid var(--amber); color: var(--amber); background: transparent; border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
-    .copy-btn { border-color: var(--cyan); color: var(--cyan); }
-    
-    .wifi-block {
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-      padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;
-    }
-    .wifi-block input {
-      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--input-bg); color: var(--text); font-size: 14px;
-    }
+    #toastContainer { position: fixed; top: calc(14px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 8px; width: 92%; max-width: 380px; pointer-events: none; }
+    .toast { background: var(--card2); border: 1px solid var(--border); border-left: 3px solid var(--accent); color: var(--text); padding: 12px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 600; box-shadow: 0 10px 28px var(--shadow); pointer-events: auto; animation: toastIn .3s cubic-bezier(.2,.8,.2,1), toastOut .35s ease 2.65s forwards; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
+    @keyframes toastOut { to { opacity: 0; transform: translateY(-8px); } }
 
-    .switch-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 12px; background: var(--input-bg); border-radius: 12px; margin-bottom: 10px;
-    }
+    footer { margin-top: 22px; text-align: center; font-size: 11.5px; color: var(--subtext); line-height: 1.6; }
+    footer hr { border: none; border-top: 1px solid var(--border); margin: 0 0 12px; }
+    .wish { font-style: italic; opacity: .85; margin-top: 6px; }
 
-    .contact-container {
-      display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
-    .contact-item {
-      display: flex; align-items: center; justify-content: space-between;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px;
-    }
-    .contact-link {
-      text-decoration: none; font-size: 13px; font-weight: 600; color: var(--cyan); flex: 1;
-    }
-
-    #toastContainer {
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
-      width: 90%; max-width: 360px; pointer-events: none;
-    }
-    .toast {
-      background: var(--card); border: 1.5px solid var(--cyan); color: var(--text);
-      padding: 14px 18px; border-radius: 16px; font-size: 14px; font-weight: 600;
-      box-shadow: 0 10px 25px var(--shadow); backdrop-filter: blur(12px);
-      text-align: center; pointer-events: auto;
-      animation: fadeInDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fadeOut 0.4s ease 2.6s forwards;
-    }
-    @keyframes fadeInDown {
-      from { opacity: 0; transform: translateY(-20px) scale(0.9); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    @keyframes fadeOut {
-      from { opacity: 1; transform: translateY(0) scale(1); }
-      to { opacity: 0; transform: translateY(-10px) scale(0.9); }
-    }
-
-    footer { margin-top: 25px; text-align: center; font-size: 12px; color: var(--subtext); line-height: 1.5; }
-    footer hr { border: none; border-top: 1px solid var(--border); margin-bottom: 12px; }
-
-    .conn-input {
-      width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
-      background: var(--input-bg); color: var(--text); font-size: 20px;
-      text-align: center; letter-spacing: 6px; margin: 10px 0;
-    }
-    #connMsg { font-size: 13px; color: var(--subtext); line-height: 1.5; text-align: center; margin: 8px 0 4px; }
-    .conn-title { margin: 14px 0 0; text-align: center; font-size: 18px; color: var(--cyan); }
-    .btn:disabled { opacity: 0.5; }
   </style>
 </head>
 <body>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.6-3 8.3-7 10-4-1.7-7-5.4-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 017.5-2"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1011.4 0"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15L6 16z"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-bt" viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></symbol>
+    <symbol id="i-finger" viewBox="0 0 24 24"><path d="M6 11a6 6 0 0112 0"/><path d="M9 20c-1-2-1-4-1-6a4 4 0 018 0c0 2 0 3-.5 5"/><path d="M12 14c0 3 .3 5 1.2 7"/><path d="M4 15c0-2 .2-3 .6-4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 005 5L21 12.6 12.6 21 3 11.4 11.4 3l3.3 3.3z" transform="scale(.9) translate(1.2 1.2)"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1-1.5 2"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-sliders2" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  </defs>
+</svg>
+
 <canvas id="snowCanvas"></canvas>
 <div id="toastContainer"></div>
 
+<!-- ============ KẾT NỐI ============ -->
 <div class="modal-overlay active" id="connectModal">
   <div class="modal-content">
-    <div class="header-container" style="margin-bottom:0;">
-      <div class="logo-wrapper"><div class="logo-ring"><span class="logo-text">HQT</span></div></div>
-    </div>
+    <div class="brand-mark"><svg class="i"><use href="#i-shield"/></svg></div>
     <h2 class="conn-title" data-i18n="connTitle">Kết nối xe</h2>
     <div id="connMsg" data-i18n="connHint">Bật Bluetooth, đứng gần xe, nhập PIN rồi bấm Kết nối.</div>
     <input id="pinInput" class="conn-input" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off">
-    <button id="connectBtn" class="btn btn-start" data-i18n="btnConnect" onclick="connectBle()">🔵 KẾT NỐI BLUETOOTH</button>
+    <button id="connectBtn" class="btn btn-start" data-i18n="btnConnect" onclick="connectBle()">Kết nối Bluetooth</button>
   </div>
 </div>
 
-<button class="settings-btn" onclick="toggleModal(true)">⚙️</button>
-
-<div class="header-container">
-  <div class="logo-wrapper">
-    <div class="logo-ring">
-      <span class="logo-text">HQT</span>
+<main class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><svg class="i"><use href="#i-shield"/></svg></div>
+      <div>
+        <div class="brand-name">HQT Smart Lock</div>
+        <div class="brand-sub" data-i18n="brandSub">Khoá thông minh cho xe</div>
+      </div>
     </div>
-  </div>
-  <div class="brand-wish">chúc bạn có một trải nghiệm đáng để trải nghiệm :)))</div>
-</div>
+    <span class="chip" id="connChip"><span class="dot"></span><span id="connChipText">Offline</span></span>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings" onclick="toggleModal(true)"><svg class="i"><use href="#i-gear"/></svg></button>
+  </header>
 
-<div class="grid">
+  <!-- Trạng thái chính -->
+  <section class="hero" id="hero" data-state="idle">
+    <div class="hero-top">
+      <div>
+        <div class="hero-state" id="heroState">--</div>
+        <div class="hero-hint" id="heroHint"></div>
+      </div>
+      <div class="hero-batt">
+        <div class="label" data-i18n="vBattLabel">Ắc Quy & Nguồn</div>
+        <div class="value on" id="gVBatt">-- V</div>
+        <div id="gPowerType">--</div>
+      </div>
+    </div>
+  </section>
+
   <div class="card card-alert" id="alertCard">
     <div class="label" data-i18n="alertLabel">Cảnh báo hệ thống</div>
     <div class="value off" id="gAlertValue">BÌNH THƯỜNG</div>
   </div>
 
-  <div class="card"><div class="label" data-i18n="sys">Hệ thống</div><div class="value on">ONLINE</div></div>
-  <div class="card"><div class="label" data-i18n="lockStatus">Trạng thái khoá</div><div class="value" id="gLock">--</div></div>
-  <div class="card"><div class="label" data-i18n="engineStatus">Khởi động máy</div><div class="value" id="gEngine">--</div></div>
-  
-  <div class="card">
-    <div class="label" data-i18n="vBattLabel">Ắc Quy & Nguồn</div>
-    <div class="value on" id="gVBatt">-- V</div>
-    <div style="font-size: 10px; color: var(--subtext); margin-top: 2px;" id="gPowerType">--</div>
-  </div>
+  <!-- Điều khiển -->
+  <section class="actions" aria-label="Controls">
+    <button class="act act-unlock" onclick="send('unlock', i18n[currentLang].msgUnlocked)">
+      <span class="ico"><svg class="i"><use href="#i-unlock"/></svg></span>
+      <span><span class="t" data-i18n="actUnlock">Mở khoá</span><span class="s" data-i18n="actUnlockSub">Cho phép hoạt động</span></span>
+    </button>
+    <button class="act act-lock" onclick="send('lock', i18n[currentLang].msgLocked)">
+      <span class="ico"><svg class="i"><use href="#i-lock"/></svg></span>
+      <span><span class="t" data-i18n="actLock">Khoá xe</span><span class="s" data-i18n="actLockSub">Ngừng hoạt động</span></span>
+    </button>
+    <button class="act act-start" onclick="send('start', i18n[currentLang].msgStarter)">
+      <span class="ico"><svg class="i"><use href="#i-power"/></svg></span>
+      <span><span class="t" data-i18n="actStart">Đề máy</span><span class="s" data-i18n="actStartSub">Nhấn để khởi động</span></span>
+    </button>
+    <button class="act act-find" onclick="triggerFindBike()">
+      <span class="ico"><svg class="i"><use href="#i-bell"/></svg></span>
+      <span><span class="t" data-i18n="actFind">Tìm xe</span><span class="s" data-i18n="actFindSub">Phát còi trong bãi</span></span>
+    </button>
+  </section>
 
-  <div class="card"><div class="label" data-i18n="standStatus">Chân chống</div><div class="value on" id="gStand">--</div></div>
-  <div class="card"><div class="label" data-i18n="odometerLabel">Quãng đường đã đi</div><div class="value on" id="gOdo">0 km</div></div>
-  
-  <div class="card card-highlight">
-    <div class="label" data-i18n="oilRemLabel">KM thay dầu còn lại</div>
-    <div class="value warn" id="gOilRem">-- km</div>
-  </div>
-</div>
+  <!-- Xe -->
+  <section class="panel">
+    <h3 class="panel-title" data-i18n="vehicleTitle">Xe</h3>
+    <div class="row"><div class="label" data-i18n="lockStatus">Trạng thái khoá</div><div class="value" id="gLock">--</div></div>
+    <div class="row"><div class="label" data-i18n="engineStatus">Khởi động máy</div><div class="value" id="gEngine">--</div></div>
+    <div class="row"><div class="label" data-i18n="standStatus">Chân chống</div><div class="value on" id="gStand">--</div></div>
+    <div class="row"><div class="label" data-i18n="sys">Hệ thống</div><div class="value on">ONLINE</div></div>
+  </section>
 
-<div class="section-title" data-i18n="diagnosticsTitle">Chẩn đoán ngoại vi & Hệ thống</div>
-<div class="grid">
-  <div class="card">
-    <div class="label" data-i18n="fpDiagLabel">Vân tay ZW101</div>
-    <div class="value" id="gFpStatus">--</div>
-  </div>
-  <div class="card">
-    <div class="label" data-i18n="rfidDiagLabel">Thẻ RFID</div>
-    <div class="value" id="gRfidStatus">--</div>
-  </div>
-  <div class="card">
-    <div class="label" data-i18n="relayDiagLabel">Rơ-le (Khóa/Đề)</div>
-    <div class="value" id="gRelayStatus">--</div>
-  </div>
-  <div class="card">
-    <div class="label" data-i18n="bleDiagLabel">Bluetooth</div>
-    <div class="value" id="gBleStatus">--</div>
-  </div>
-</div>
+  <section class="panel">
+    <div class="stats">
+      <div class="stat"><div class="label" data-i18n="odometerLabel">Quãng đường đã đi</div><div class="value on" id="gOdo">0 km</div></div>
+      <div class="stat"><div class="label" data-i18n="oilRemLabel">KM thay dầu còn lại</div><div class="value warn" id="gOilRem">-- km</div></div>
+    </div>
+  </section>
 
-<button class="btn btn-find" data-i18n="btnFind" onclick="triggerFindBike()">🔔 TÌM XE TRONG BÃI</button>
-<button class="btn btn-unlock" data-i18n="btnUnlock" onclick="send('unlock', i18n[currentLang].msgUnlocked)">CHO PHÉP HOẠT ĐỘNG (MỞ KHOÁ)</button>
+  <section class="panel">
+    <h3 class="panel-title" data-i18n="diagnosticsTitle">Chẩn đoán ngoại vi & Hệ thống</h3>
+    <div class="row"><div class="label" data-i18n="fpDiagLabel">Vân tay ZW101</div><div class="value" id="gFpStatus">--</div></div>
+    <div class="row"><div class="label" data-i18n="rfidDiagLabel">Thẻ RFID</div><div class="value" id="gRfidStatus">--</div></div>
+    <div class="row"><div class="label" data-i18n="relayDiagLabel">Rơ-le (Khóa/Đề)</div><div class="value" id="gRelayStatus">--</div></div>
+    <div class="row"><div class="label" data-i18n="bleDiagLabel">Bluetooth</div><div class="value" id="gBleStatus">--</div></div>
+  </section>
 
-<div class="btn-row">
-  <button class="btn btn-start" data-i18n="btnStart" onclick="send('start', i18n[currentLang].msgStarter)">NHẤN ĐỂ ĐỀ 🚀</button>
-  <button class="btn btn-lock" data-i18n="btnLock" onclick="send('lock', i18n[currentLang].msgLocked)">NGỪNG HOẠT ĐỘNG (KHOÁ)</button>
-</div>
+  <footer>
+    <hr>
+    © 2026 Huân Quang Trần. Bản quyền phần mềm thuộc về tác giả.<br>
+    Hân hạnh được phục vụ mọi người.
+    <div class="wish">chúc bạn có một trải nghiệm đáng để trải nghiệm :)))</div>
+  </footer>
+</main>
 
-<div class="modal-overlay" id="settingsModal">
+<!-- ============ CÀI ĐẶT ============ -->
+<div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)toggleModal(false)">
   <div class="modal-content">
     <div class="modal-header">
       <h2 data-i18n="settingsTitle">Cài Đặt Hệ Thống</h2>
-      <button class="close-btn" onclick="toggleModal(false)">&times;</button>
+      <button class="close-btn" aria-label="Close" onclick="toggleModal(false)">&times;</button>
     </div>
 
-    <div class="switch-row">
-      <span data-i18n="themeLabel">Giao diện</span>
-      <button class="mini-btn" id="themeBtn" onclick="toggleTheme()">🌙 Tối</button>
-    </div>
-
-    <div class="switch-row">
-      <span data-i18n="langLabel">Ngôn ngữ</span>
-      <button class="mini-btn" id="langBtn" onclick="toggleLang()">🌐 VI</button>
-    </div>
-
-    <div class="section-title" data-i18n="odoConfigTitle">Cập nhật công-tơ-mét</div>
-    <div class="wifi-block">
-      <span data-i18n="odoDesc">Số KM hiện tại trên đồng hồ xe</span>
-      <input id="odoKmInput" type="number" placeholder="Ví dụ: 12500">
-      <button class="btn btn-add" data-i18n="btnSaveOdo" onclick="saveOdo()">Cập nhật Odometer</button>
-    </div>
-
-    <div class="section-title" data-i18n="oilConfigTitle">Cài đặt định mức thay dầu</div>
-    <div class="wifi-block">
-      <span data-i18n="oilKmDesc">Số KM mỗi lần thay dầu (Km)</span>
-      <input id="oilLimitKm" type="number" placeholder="Ví dụ: 1500">
-      <span data-i18n="oilDaysDesc">Số ngày định kỳ thay dầu (Ngày)</span>
-      <input id="oilLimitDays" type="number" placeholder="Ví dụ: 90">
-      <button class="btn btn-add" data-i18n="btnSaveOilConfig" onclick="saveOilConfig()">Lưu định mức thay dầu</button>
-    </div>
-
-    <div class="section-title" data-i18n="maintTitle">Lịch bảo dưỡng & Thay thế</div>
-    <div class="wifi-block">
-      <span data-i18n="oilDateLabel">🛢️ Ngày thay dầu máy gần nhất:</span>
-      <input id="oilDate" type="date">
-      
-      <span data-i18n="serviceDateLabel">🛠️ Ngày bảo dưỡng xe gần nhất:</span>
-      <input id="serviceDate" type="date">
-      
-      <span data-i18n="airFilterDateLabel">🌬️ Ngày thay lọc gió gần nhất:</span>
-      <input id="airFilterDate" type="date">
-
-      <button class="btn btn-add" data-i18n="btnSaveMaint" onclick="saveMaintenance()">Lưu nhật ký bảo dưỡng</button>
-    </div>
-
-    <div class="section-title" data-i18n="fpTitle">Vân tay ZW101</div>
-    <div id="fpProgress" class="wifi-block" style="display:none; border-color:var(--green);">
-      <span id="fpProgressText" style="font-weight:700; color:var(--green);"></span>
-      <div style="height:8px; background:var(--input-bg); border-radius:6px; overflow:hidden;">
-        <div id="fpProgressBar" style="height:100%; width:0%; background:var(--green); transition:width 0.3s;"></div>
+    <!-- Chung -->
+    <details class="group" open>
+      <summary><span class="gi"><svg class="i"><use href="#i-sliders2"/></svg></span><span data-i18n="grpGeneral">Chung</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="switch-row">
+          <span data-i18n="themeLabel">Giao diện</span>
+          <button class="mini-btn" id="themeBtn" onclick="toggleTheme()">Tối</button>
+        </div>
+        <div class="switch-row">
+          <span data-i18n="langLabel">Ngôn ngữ</span>
+          <button class="mini-btn" id="langBtn" onclick="toggleLang()">VI</button>
+        </div>
+        <div class="switch-row">
+          <span data-i18n="snowLabel">Hiệu ứng tuyết rơi</span>
+          <button class="mini-btn" id="snowBtn" onclick="toggleSnow()">Bật</button>
+        </div>
       </div>
-      <button class="btn btn-lock" style="margin:4px 0 0;" data-i18n="cancelFp" onclick="cancelFp()">Huỷ đăng ký</button>
-    </div>
-    <button class="btn btn-add" id="addFpBtn" data-i18n="addFp" onclick="addFingerprint()">+ Thêm vân tay mới</button>
+    </details>
 
-    <div id="fpContainer" class="contact-container" style="margin-top: 8px; margin-bottom: 12px;"></div>
+    <!-- Vân tay & thẻ -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-finger"/></svg></span><span data-i18n="grpAccess">Vân tay & thẻ RFID</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="section-title" data-i18n="fpTitle">Vân tay ZW101</div>
+        <div id="fpProgress" class="wifi-block" style="display:none; border-color:var(--green);">
+          <span id="fpProgressText" style="font-weight:700; color:var(--green);"></span>
+          <div style="height:8px; background:var(--input-bg); border-radius:6px; overflow:hidden;">
+            <div id="fpProgressBar" style="height:100%; width:0%; background:var(--green); transition:width 0.3s;"></div>
+          </div>
+          <button class="btn btn-lock" style="margin:4px 0 0;" data-i18n="cancelFp" onclick="cancelFp()">Huỷ đăng ký</button>
+        </div>
+        <button class="btn btn-add" id="addFpBtn" data-i18n="addFp" onclick="addFingerprint()">+ Thêm vân tay mới</button>
+        <div id="fpContainer" class="contact-container" style="margin-top: 10px; margin-bottom: 10px;"></div>
+        <button class="btn btn-lock" data-i18n="clearFp" onclick="clearFps()">Xoá tất cả vân tay</button>
+        <button class="btn btn-find" data-i18n="btnLedTest" onclick="send('ledtest', i18n[currentLang].msgLedTest)">Thử màu đèn vân tay</button>
 
-    <button class="btn btn-lock" data-i18n="clearFp" onclick="clearFps()">Xoá tất cả vân tay</button>
-    <button class="btn btn-find" data-i18n="btnLedTest" onclick="send('ledtest', i18n[currentLang].msgLedTest)">Thử màu đèn vân tay</button>
-
-    <div class="section-title" data-i18n="rfidTitle">Thẻ RFID</div>
-    <button class="btn btn-add" data-i18n="addRfid" onclick="send('addrfid', i18n[currentLang].msgAddRfid)">+ Thêm thẻ mới</button>
-    
-    <div id="rfidContainer" class="contact-container" style="margin-top: 8px; margin-bottom: 12px;"></div>
-
-    <div class="mgmt-row">
-      <span data-i18n="delRfid">Xoá thẻ theo STT</span>
-      <input id="rid" type="number" min="0">
-      <button class="mini-btn" data-i18n="btnDelete" onclick="deleteRfid()">Xoá</button>
-    </div>
-
-    <div class="section-title" data-i18n="delayTitle">Thời gian chờ trước khi đề</div>
-    <div class="wifi-block">
-      <span data-i18n="delayDesc">Số giây chờ sau khi mở khoá</span>
-      <input id="delaySec" type="number" min="1" max="30">
-      <button class="btn btn-add" data-i18n="btnSaveDelay" onclick="saveDelay()">Lưu thời gian chờ</button>
-    </div>
-
-    <!-- THÊM MỚI: Cài đặt thời gian đề nổ (ms) từ 0.5s trở lên -->
-    <div class="section-title" data-i18n="starterTimeTitle">Cài đặt thời gian đề nổ</div>
-    <div class="wifi-block">
-      <span data-i18n="starterTimeDesc">Thời gian kích Relay đề (ms, tối thiểu 500)</span>
-      <input id="starterMs" type="number" min="500" step="100" placeholder="Ví dụ: 1500">
-      <button class="btn btn-add" data-i18n="btnSaveStarter" onclick="saveStarterTime()">Lưu thời gian đề</button>
-    </div>
-
-    <div class="section-title" data-i18n="vcalTitle">Hiệu chuẩn điện áp</div>
-    <div class="wifi-block">
-      <span data-i18n="vcalDesc">Dùng đồng hồ đo điện áp thực tế trên ắc quy, nhập vào ô dưới rồi bấm Hiệu chuẩn. Hệ thống tự tính hệ số.</span>
-      <div style="display:flex; justify-content:space-between; font-size:13px;">
-        <span data-i18n="vcalShown">Đang hiển thị:</span><b id="vcalLive">-- V</b>
+        <div class="section-title" data-i18n="rfidTitle">Thẻ RFID</div>
+        <button class="btn btn-add" data-i18n="addRfid" onclick="send('addrfid', i18n[currentLang].msgAddRfid)">+ Thêm thẻ mới</button>
+        <div id="rfidContainer" class="contact-container" style="margin-top: 10px; margin-bottom: 10px;"></div>
+        <div class="mgmt-row">
+          <span data-i18n="delRfid">Xoá thẻ theo STT</span>
+          <input id="rid" type="number" min="0">
+          <button class="mini-btn" data-i18n="btnDelete" onclick="deleteRfid()">Xoá</button>
+        </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:13px;">
-        <span data-i18n="vcalFactor">Hệ số hiện tại:</span><b id="vcalFactorTxt">--</b>
+    </details>
+
+    <!-- Khởi động -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-power"/></svg></span><span data-i18n="grpStart">Khởi động xe</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="section-title" data-i18n="delayTitle">Thời gian chờ trước khi đề</div>
+        <div class="wifi-block">
+          <span data-i18n="delayDesc">Số giây chờ sau khi mở khoá</span>
+          <input id="delaySec" type="number" min="1" max="30">
+          <button class="btn btn-add" data-i18n="btnSaveDelay" onclick="saveDelay()">Lưu thời gian chờ</button>
+        </div>
+
+        <div class="section-title" data-i18n="starterTimeTitle">Cài đặt thời gian đề nổ</div>
+        <div class="wifi-block">
+          <span data-i18n="starterTimeDesc">Thời gian kích Relay đề (ms, tối thiểu 500)</span>
+          <input id="starterMs" type="number" min="500" step="100" placeholder="Ví dụ: 1500">
+          <button class="btn btn-add" data-i18n="btnSaveStarter" onclick="saveStarterTime()">Lưu thời gian đề</button>
+        </div>
+
+        <div class="section-title" data-i18n="holdTitle">Thời gian giữ vân tay để đề</div>
+        <div class="wifi-block">
+          <span data-i18n="holdDesc">Giữ vân tay lâu hơn số ms này thì đề. Chạm ngắn hơn chỉ tính là chạm để khoá (3 lần chạm = khoá xe), không bao giờ đề. Từ 400 đến 3000.</span>
+          <input id="holdMs" type="number" min="400" max="3000" step="100" placeholder="Ví dụ: 800">
+          <button class="btn btn-add" data-i18n="btnSaveHold" onclick="saveHoldTime()">Lưu thời gian giữ</button>
+        </div>
       </div>
-      <input id="vcalActual" type="number" step="0.01" min="5" max="20" placeholder="Điện áp thực tế (V), ví dụ: 12.96">
-      <button class="btn btn-add" data-i18n="btnVcal" onclick="saveVcal()">Hiệu chuẩn điện áp</button>
-      <button class="btn btn-lock" data-i18n="btnVcalReset" onclick="resetVcal()">Đặt lại hiệu chuẩn</button>
-    </div>
+    </details>
 
-    <div class="section-title" data-i18n="findTitle">Nhịp điệu báo tìm xe</div>
-    <div class="wifi-block">
-      <span data-i18n="findPatLabel">Chọn nhịp điệu</span>
-      <select id="findPat" onchange="renderFindPreview()" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); font-size:14px;"></select>
-      <div id="findPreview" style="font-size:20px; letter-spacing:3px; text-align:center; color:var(--cyan); min-height:28px; overflow-wrap:anywhere;"></div>
-      <span data-i18n="findRepLabel">Số lần lặp lại (1–10)</span>
-      <input id="findRep" type="number" min="1" max="10" placeholder="Ví dụ: 2">
-      <button class="btn btn-add" data-i18n="btnSaveFind" onclick="saveFindRhythm(false)">Lưu nhịp báo</button>
-      <button class="btn btn-find" data-i18n="btnTestFind" onclick="saveFindRhythm(true)">🔔 Lưu &amp; thử nhịp báo</button>
-    </div>
+    <!-- Báo động & ngủ -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-bell"/></svg></span><span data-i18n="grpAlert">Tìm xe & tiết kiệm điện</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="section-title" data-i18n="findTitle">Nhịp điệu báo tìm xe</div>
+        <div class="wifi-block">
+          <span data-i18n="findPatLabel">Chọn nhịp điệu</span>
+          <select id="findPat" onchange="renderFindPreview()"></select>
+          <div id="findPreview" style="font-size:20px; letter-spacing:3px; text-align:center; color:var(--cyan); min-height:28px; overflow-wrap:anywhere;"></div>
+          <span data-i18n="findRepLabel">Số lần lặp lại (1–10)</span>
+          <input id="findRep" type="number" min="1" max="10" placeholder="Ví dụ: 2">
+          <button class="btn btn-add" data-i18n="btnSaveFind" onclick="saveFindRhythm(false)">Lưu nhịp báo</button>
+          <button class="btn btn-find" data-i18n="btnTestFind" onclick="saveFindRhythm(true)">Lưu &amp; thử nhịp báo</button>
+        </div>
 
-    <div class="section-title" data-i18n="holdTitle">Thời gian giữ vân tay để đề</div>
-    <div class="wifi-block">
-      <span data-i18n="holdDesc">Giữ vân tay lâu hơn số ms này thì đề. Chạm ngắn hơn chỉ tính là chạm để khoá (3 lần chạm = khoá xe), không bao giờ đề. Từ 400 đến 3000.</span>
-      <input id="holdMs" type="number" min="400" max="3000" step="100" placeholder="Ví dụ: 800">
-      <button class="btn btn-add" data-i18n="btnSaveHold" onclick="saveHoldTime()">Lưu thời gian giữ</button>
-    </div>
-
-    <div class="section-title" data-i18n="sleepTitle">Tự động ngủ nông</div>
-    <div class="wifi-block">
-      <span data-i18n="sleepDesc">Vào chế độ ngủ sau (giây, từ 10 đến 100) khi khoá xe và không dùng. 0 = tắt.</span>
-      <select id="sleepMode" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); font-size:14px;">
-        <option value="1" data-i18n="sleepModeEco">Tiết kiệm (vẫn phát Bluetooth)</option>
-        <option value="0" data-i18n="sleepModeDeep">Ngủ hẳn (chạm vân tay để đánh thức)</option>
-      </select>
-      <input id="sleepSec" type="number" min="0" max="100" placeholder="Ví dụ: 60 (10–100, 0 = tắt)">
-      <button class="btn btn-add" data-i18n="btnSaveSleep" onclick="saveSleep()">Lưu thời gian ngủ</button>
-    </div>
-
-    <div class="section-title" data-i18n="wifiTitle">Cài đặt Bluetooth</div>
-    <div class="wifi-block">
-      <span data-i18n="bleNameDesc">Tên Bluetooth (tối đa 12 ký tự)</span>
-      <input id="bleNameInput" type="text" maxlength="12">
-      <button class="btn btn-add" data-i18n="btnSaveBleName" onclick="saveBleName()">Lưu tên &amp; Khởi động lại</button>
-    </div>
-    <div class="wifi-block">
-      <span data-i18n="pinDesc">Đổi PIN (4-8 chữ số)</span>
-      <input id="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••••">
-      <button class="btn btn-add" data-i18n="btnSavePin" onclick="savePin()">Lưu PIN mới</button>
-    </div>
-    <button class="btn btn-lock" data-i18n="btnDisconnect" onclick="disconnectBle()">Ngắt kết nối</button>
-
-    <div class="section-title" data-i18n="contactTitle">Liên hệ hỗ trợ</div>
-    <div class="contact-container">
-      <div class="contact-item">
-        <a class="contact-link" href="https://zalo.me/0375354596" target="_blank">💬 Zalo: 0375354596</a>
-        <button class="mini-btn copy-btn" onclick="copyToClipboard('0375354596', '📋 Đã sao chép SĐT Zalo!')">📋 Copy</button>
+        <div class="section-title" data-i18n="sleepTitle">Tự động ngủ nông</div>
+        <div class="wifi-block">
+          <span data-i18n="sleepDesc">Vào chế độ ngủ sau (giây, từ 10 đến 100) khi khoá xe và không dùng. 0 = tắt.</span>
+          <select id="sleepMode">
+            <option value="1" data-i18n="sleepModeEco">Tiết kiệm (vẫn phát Bluetooth)</option>
+            <option value="0" data-i18n="sleepModeDeep">Ngủ hẳn (chạm vân tay để đánh thức)</option>
+          </select>
+          <input id="sleepSec" type="number" min="0" max="100" placeholder="Ví dụ: 60 (10–100, 0 = tắt)">
+          <button class="btn btn-add" data-i18n="btnSaveSleep" onclick="saveSleep()">Lưu thời gian ngủ</button>
+        </div>
       </div>
-      <div class="contact-item">
-        <a class="contact-link" href="https://facebook.com/huanquangtran25" target="_blank">🌐 Facebook: HuanQuangTran</a>
-        <button class="mini-btn copy-btn" onclick="copyToClipboard('https://facebook.com/huanquangtran25', '📋 Đã sao chép Link Facebook!')">📋 Copy</button>
+    </details>
+
+    <!-- Xe & bảo dưỡng -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-wrench"/></svg></span><span data-i18n="grpVehicle">Xe & bảo dưỡng</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="section-title" data-i18n="odoConfigTitle">Cập nhật công-tơ-mét</div>
+        <div class="wifi-block">
+          <span data-i18n="odoDesc">Số KM hiện tại trên đồng hồ xe</span>
+          <input id="odoKmInput" type="number" placeholder="Ví dụ: 12500">
+          <button class="btn btn-add" data-i18n="btnSaveOdo" onclick="saveOdo()">Cập nhật Odometer</button>
+        </div>
+
+        <div class="section-title" data-i18n="oilConfigTitle">Cài đặt định mức thay dầu</div>
+        <div class="wifi-block">
+          <span data-i18n="oilKmDesc">Số KM mỗi lần thay dầu (Km)</span>
+          <input id="oilLimitKm" type="number" placeholder="Ví dụ: 1500">
+          <span data-i18n="oilDaysDesc">Số ngày định kỳ thay dầu (Ngày)</span>
+          <input id="oilLimitDays" type="number" placeholder="Ví dụ: 90">
+          <button class="btn btn-add" data-i18n="btnSaveOilConfig" onclick="saveOilConfig()">Lưu định mức thay dầu</button>
+        </div>
+
+        <div class="section-title" data-i18n="maintTitle">Lịch bảo dưỡng & Thay thế</div>
+        <div class="wifi-block">
+          <span data-i18n="oilDateLabel">Ngày thay dầu máy gần nhất:</span>
+          <input id="oilDate" type="date">
+          <span data-i18n="serviceDateLabel">Ngày bảo dưỡng xe gần nhất:</span>
+          <input id="serviceDate" type="date">
+          <span data-i18n="airFilterDateLabel">Ngày thay lọc gió gần nhất:</span>
+          <input id="airFilterDate" type="date">
+          <button class="btn btn-add" data-i18n="btnSaveMaint" onclick="saveMaintenance()">Lưu nhật ký bảo dưỡng</button>
+        </div>
+
+        <div class="section-title" data-i18n="vcalTitle">Hiệu chuẩn điện áp</div>
+        <div class="wifi-block">
+          <span data-i18n="vcalDesc">Dùng đồng hồ đo điện áp thực tế trên ắc quy, nhập vào ô dưới rồi bấm Hiệu chuẩn. Hệ thống tự tính hệ số.</span>
+          <div style="display:flex; justify-content:space-between; font-size:13px;">
+            <span data-i18n="vcalShown">Đang hiển thị:</span><b id="vcalLive">-- V</b>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px;">
+            <span data-i18n="vcalFactor">Hệ số hiện tại:</span><b id="vcalFactorTxt">--</b>
+          </div>
+          <input id="vcalActual" type="number" step="0.01" min="5" max="20" placeholder="Điện áp thực tế (V), ví dụ: 12.96">
+          <button class="btn btn-add" data-i18n="btnVcal" onclick="saveVcal()">Hiệu chuẩn điện áp</button>
+          <button class="btn btn-lock" data-i18n="btnVcalReset" onclick="resetVcal()">Đặt lại hiệu chuẩn</button>
+        </div>
       </div>
-      <div class="contact-item">
-        <a class="contact-link" href="mailto:huanmomk5@gmail.com">✉️ Email Support</a>
-        <button class="mini-btn copy-btn" onclick="copyToClipboard('huanmomk5@gmail.com', '📋 Đã sao chép Email!')">📋 Copy</button>
+    </details>
+
+    <!-- Bluetooth & bảo mật -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-bt"/></svg></span><span data-i18n="grpBle">Bluetooth & bảo mật</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="section-title" data-i18n="wifiTitle">Cài đặt Bluetooth</div>
+        <div class="wifi-block">
+          <span data-i18n="bleNameDesc">Tên Bluetooth (tối đa 12 ký tự)</span>
+          <input id="bleNameInput" type="text" maxlength="12">
+          <button class="btn btn-add" data-i18n="btnSaveBleName" onclick="saveBleName()">Lưu tên &amp; Khởi động lại</button>
+        </div>
+        <div class="wifi-block">
+          <span data-i18n="pinDesc">Đổi PIN (4-8 chữ số)</span>
+          <input id="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••••">
+          <button class="btn btn-add" data-i18n="btnSavePin" onclick="savePin()">Lưu PIN mới</button>
+        </div>
+        <button class="btn btn-lock" data-i18n="btnDisconnect" onclick="disconnectBle()">Ngắt kết nối</button>
       </div>
-    </div>
+    </details>
+
+    <!-- Hỗ trợ -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-help"/></svg></span><span data-i18n="contactTitle">Liên hệ hỗ trợ</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="contact-container" style="margin-top:14px;">
+          <div class="contact-item">
+            <a class="contact-link" href="https://zalo.me/0375354596" target="_blank" rel="noopener">Zalo: 0375354596</a>
+            <button class="mini-btn copy-btn" onclick="copyToClipboard('0375354596', '📋 Đã sao chép SĐT Zalo!')">Copy</button>
+          </div>
+          <div class="contact-item">
+            <a class="contact-link" href="https://facebook.com/huanquangtran25" target="_blank" rel="noopener">Facebook: HuanQuangTran</a>
+            <button class="mini-btn copy-btn" onclick="copyToClipboard('https://facebook.com/huanquangtran25', '📋 Đã sao chép Link Facebook!')">Copy</button>
+          </div>
+          <div class="contact-item">
+            <a class="contact-link" href="mailto:huanmomk5@gmail.com">Email Support</a>
+            <button class="mini-btn copy-btn" onclick="copyToClipboard('huanmomk5@gmail.com', '📋 Đã sao chép Email!')">Copy</button>
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
 </div>
-
-<footer>
-  <hr>
-  © 2026 Huân Quang Trần. Bản quyền phần mềm thuộc về tác giả.<br>
-  Hân hạnh được phục vụ mọi người.
-</footer>
 
 <script>
 function showToast(message) {
@@ -782,7 +732,7 @@ let currentLang = localStorage.getItem('lang') || 'vi';
 
 function updateLanguageUI() {
   const langBtn = document.getElementById('langBtn');
-  if (langBtn) langBtn.innerText = currentLang === 'vi' ? '🌐 VI' : '🌐 ENG';
+  if (langBtn) langBtn.innerText = currentLang === 'vi' ? 'VI' : 'ENG';
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (i18n[currentLang] && i18n[currentLang][key]) {
@@ -808,7 +758,7 @@ function initSnow() {
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W; canvas.height = H;
   flakes = [];
-  const flakeCount = Math.min(80, Math.floor(W / 5));
+  const flakeCount = Math.min(45, Math.floor(W / 9));
   for (let i = 0; i < flakeCount; i++) {
     flakes.push({
       x: Math.random() * W, y: Math.random() * H,
@@ -818,8 +768,10 @@ function initSnow() {
   }
 }
 
+let snowOn = true;
 function drawSnow() {
   ctx.clearRect(0, 0, W, H);
+  if (!snowOn) { setTimeout(() => requestAnimationFrame(drawSnow), 400); return; }
   const isLight = document.body.getAttribute('data-theme') === 'light';
   flakes.forEach(f => {
     ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
@@ -839,14 +791,14 @@ function toggleTheme() {
   const newTheme = currentTheme === 'light' ? 'dark' : 'light';
   document.body.setAttribute('data-theme', newTheme);
   const themeBtn = document.getElementById('themeBtn');
-  if (themeBtn) themeBtn.innerText = newTheme === 'light' ? '☀️ Sáng' : '🌙 Tối';
+  if (themeBtn) themeBtn.innerText = newTheme === 'light' ? 'Sáng' : 'Tối';
   localStorage.setItem('theme', newTheme);
 }
 
 const savedTheme = localStorage.getItem('theme') || 'dark';
 document.body.setAttribute('data-theme', savedTheme);
 const themeBtnInit = document.getElementById('themeBtn');
-if (themeBtnInit) themeBtnInit.innerText = savedTheme === 'light' ? '☀️ Sáng' : '🌙 Tối';
+if (themeBtnInit) themeBtnInit.innerText = savedTheme === 'light' ? 'Sáng' : 'Tối';
 
 function toggleModal(show) {
   document.getElementById('settingsModal').classList.toggle('active', show);
@@ -1494,6 +1446,86 @@ async function savePin() {
 
 // ================== KHỞI TẠO ==================
 try { document.getElementById('pinInput').value = localStorage.getItem('savedPin') || ''; } catch (e) {}
+
+// ================== GIAO DIỆN MỚI (bổ sung) ==================
+Object.assign(i18n.vi, {
+  brandSub: "Khoá thông minh cho xe", vehicleTitle: "Xe",
+  btnConnect: "Kết nối Bluetooth", connLabelOn: "Đã kết nối", connLabelOff: "Chưa kết nối",
+  actUnlock: "Mở khoá", actUnlockSub: "Cho phép hoạt động",
+  actLock: "Khoá xe", actLockSub: "Ngừng hoạt động",
+  actStart: "Đề máy", actStartSub: "Nhấn để khởi động",
+  actFind: "Tìm xe", actFindSub: "Phát còi trong bãi",
+  grpGeneral: "Chung", grpAccess: "Vân tay & thẻ RFID", grpStart: "Khởi động xe",
+  grpAlert: "Tìm xe & tiết kiệm điện", grpVehicle: "Xe & bảo dưỡng", grpBle: "Bluetooth & bảo mật",
+  snowLabel: "Hiệu ứng tuyết rơi", snowOn: "Bật", snowOff: "Tắt",
+  heroLocked: "Đã khoá", heroReady: "Sẵn sàng", heroRunning: "Đang nổ máy", heroIdle: "Chưa kết nối",
+  heroLockedHint: "Xe đang khoá. Quét vân tay hoặc thẻ để mở.",
+  heroReadyHint: "Đã mở khoá, có thể đề máy.",
+  heroRunningHint: "Động cơ đang chạy.", heroIdleHint: "Kết nối Bluetooth để điều khiển."
+});
+Object.assign(i18n.eng, {
+  brandSub: "Smart lock for your bike", vehicleTitle: "Vehicle",
+  btnConnect: "Connect Bluetooth", connLabelOn: "Connected", connLabelOff: "Offline",
+  actUnlock: "Unlock", actUnlockSub: "Allow operation",
+  actLock: "Lock", actLockSub: "Stop operation",
+  actStart: "Start engine", actStartSub: "Tap to start",
+  actFind: "Find bike", actFindSub: "Sound the buzzer",
+  grpGeneral: "General", grpAccess: "Fingerprint & RFID", grpStart: "Starting",
+  grpAlert: "Find bike & power saving", grpVehicle: "Vehicle & maintenance", grpBle: "Bluetooth & security",
+  snowLabel: "Snow effect", snowOn: "On", snowOff: "Off",
+  heroLocked: "Locked", heroReady: "Ready", heroRunning: "Engine running", heroIdle: "Not connected",
+  heroLockedHint: "Bike is locked. Use fingerprint or card to unlock.",
+  heroReadyHint: "Unlocked, ready to start.",
+  heroRunningHint: "Engine is running.", heroIdleHint: "Connect Bluetooth to take control."
+});
+Object.assign(i18n.vi, { btnFind: "Tìm xe", btnUnlock: "Mở khoá", btnStart: "Đề máy", btnLock: "Khoá xe" });
+Object.assign(i18n.eng, { btnFind: "Find bike", btnUnlock: "Unlock", btnStart: "Start engine", btnLock: "Lock" });
+
+let uiConnected = false;
+function setHero(d) {
+  const t = i18n[currentLang], h = document.getElementById('hero');
+  let st = 'idle';
+  if (uiConnected && d) st = d.engine ? 'running' : (d.unlocked ? 'ready' : 'locked');
+  else if (uiConnected) st = 'locked';
+  const k = {idle:'Idle', locked:'Locked', ready:'Ready', running:'Running'}[st];
+  h.dataset.state = st;
+  document.getElementById('heroState').innerText = t['hero' + k];
+  document.getElementById('heroHint').innerText = t['hero' + k + 'Hint'];
+}
+function setConnChip(on) {
+  uiConnected = on;
+  const c = document.getElementById('connChip');
+  c.classList.toggle('live', on);
+  document.getElementById('connChipText').innerText = i18n[currentLang][on ? 'connLabelOn' : 'connLabelOff'];
+  setHero(lastStatus);
+}
+const _showConnect = showConnect;
+showConnect = function (show) { _showConnect(show); setConnChip(!show); };
+const _renderStatus = renderStatus;
+renderStatus = function (d) { _renderStatus(d); setHero(d); };
+const _updateLang = updateLanguageUI;
+updateLanguageUI = function () {
+  _updateLang();
+  const sb = document.getElementById('snowBtn');
+  if (sb) sb.innerText = i18n[currentLang][snowOn ? 'snowOn' : 'snowOff'];
+  if (typeof setConnChip === 'function' && document.getElementById('connChip')) {
+    document.getElementById('connChipText').innerText = i18n[currentLang][uiConnected ? 'connLabelOn' : 'connLabelOff'];
+    setHero(lastStatus);
+  }
+};
+function toggleSnow() {
+  snowOn = !snowOn;
+  try { localStorage.setItem('snow', snowOn ? '1' : '0'); } catch (e) {}
+  updateLanguageUI();
+}
+try {
+  const sv = localStorage.getItem('snow');
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  snowOn = sv === null ? !reduce : sv === '1';
+} catch (e) {}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleModal(false); });
+setConnChip(false);
+
 updateLanguageUI();
 buildFindSelect();
 if (!navigator.bluetooth) {
@@ -1501,6 +1533,7 @@ if (!navigator.bluetooth) {
     'Trình duyệt này không hỗ trợ Web Bluetooth. iPhone: mở trang bằng Bluefy. Android: dùng Chrome.',
     'This browser has no Web Bluetooth. iPhone: open in Bluefy. Android: use Chrome.'), true);
 }
+
 
 </script>
 </body>
