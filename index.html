@@ -411,6 +411,18 @@
     body.lite #aurora i { animation-duration: 60s !important; }
     body.lite #fxCanvas { display: none; }
 
+
+    /* ===== kiểm tra lỗi ===== */
+    .diag-verdict { margin: 14px 0 6px; padding: 12px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.5; border: 1px solid var(--border); background: var(--card2); }
+    .diag-verdict.ok { border-color: color-mix(in srgb, var(--green) 55%, transparent); }
+    .diag-verdict.warn { border-color: color-mix(in srgb, var(--amber) 60%, transparent); }
+    .diag-verdict.bad { border-color: color-mix(in srgb, var(--pink) 60%, transparent); }
+    .diag-verdict ul { margin: 6px 0 0; padding-left: 18px; }
+    .diag-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 2px; font-size: 13px; }
+    .diag-row + .diag-row { border-top: 1px solid var(--border); }
+    .diag-row span:first-child { color: var(--subtext); }
+    .diag-row b { text-align: right; font-weight: 650; }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
     }
@@ -435,6 +447,7 @@
     <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1-1.5 2"/><path d="M12 17h.01"/></symbol>
     <symbol id="i-sliders2" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></symbol>
   </defs>
 </svg>
 
@@ -557,7 +570,7 @@
     <hr>
     © 2026 Huân Quang Trần. Bản quyền phần mềm thuộc về tác giả.<br>
     Hân hạnh được phục vụ mọi người.
-    <div class="ver" id="verTag">Giao diện v7 · nền động + kính lỏng + chế độ mượt</div>
+    <div class="ver" id="verTag">Giao diện v8 · có mục Kiểm tra lỗi</div>
     <div class="wish">chúc bạn có một trải nghiệm đáng để trải nghiệm :)))</div>
   </footer>
 </main>
@@ -788,6 +801,17 @@
           <button class="btn btn-add" data-i18n="btnVcal" onclick="saveVcal()">Hiệu chuẩn điện áp</button>
           <button class="btn btn-lock" data-i18n="btnVcalReset" onclick="resetVcal()">Đặt lại hiệu chuẩn</button>
         </div>
+      </div>
+    </details>
+
+    <!-- Kiểm tra lỗi -->
+    <details class="group" id="diagGroup">
+      <summary><span class="gi"><svg class="i"><use href="#i-pulse"/></svg></span><span data-i18n="grpDiag">Kiểm tra lỗi</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div id="diagVerdict" class="diag-verdict">--</div>
+        <div id="diagRows"></div>
+        <button class="btn btn-add" data-i18n="btnDiagCopy" onclick="copyDiagReport()">Sao chép báo cáo lỗi</button>
+        <button class="btn btn-lock" data-i18n="btnDiagClear" onclick="send('diagclr', L('Đã xoá bộ đếm lỗi', 'Error counters cleared'))">Xoá bộ đếm lỗi</button>
       </div>
     </details>
 
@@ -2179,6 +2203,64 @@ document.getElementById('perfMode').value = perfMode;
 applyPerf();
 if (perfMode === 'auto' && lsGet('perfAuto') !== 'lite') perfWatch();
 { const _tm = toggleModal; toggleModal = function (s) { _tm(s); document.body.classList.toggle('modal-open', !!s); }; }
+
+
+// ================== KIỂM TRA LỖI (bổ sung) ==================
+Object.assign(i18n.vi, { grpDiag: "Kiểm tra lỗi", btnDiagCopy: "Sao chép báo cáo lỗi", btnDiagClear: "Xoá bộ đếm lỗi" });
+Object.assign(i18n.eng, { grpDiag: "Error check", btnDiagCopy: "Copy error report", btnDiagClear: "Clear error counters" });
+const RST_VI = ['Cấp điện lại', 'Khởi động lại bằng phần mềm', 'Lỗi chương trình (panic)', 'Treo (ngắt)', 'Treo, watchdog khởi động lại', 'Treo (watchdog)', 'Thức dậy từ ngủ sâu', 'SỤT NGUỒN (brownout)', 'Bấm nút EN', 'Khác'];
+const RST_EN = ['Power on', 'Software restart', 'Program crash (panic)', 'Hang (interrupt)', 'Hang, watchdog reboot', 'Hang (watchdog)', 'Woke from deep sleep', 'BROWNOUT (power dip)', 'EN button', 'Other'];
+let lastDiag = null;
+function fmtUp(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (d ? d + L(' ngày ', 'd ') : '') + (h ? h + L(' giờ ', 'h ') : '') + (m ? m + L(' phút ', 'm ') : '') + x + L(' giây', 's');
+}
+function buildDiag(dg, st) {
+  const rows = [], bad = [], warn = [];
+  const rs = (currentLang === 'vi' ? RST_VI : RST_EN)[dg.rs] || '?';
+  const rsBad = [2, 3, 4, 5, 7].includes(dg.rs);
+  rows.push([L('Lần khởi động gần nhất', 'Last boot'), rs, rsBad ? 'danger' : 'on']);
+  rows.push([L('Đã chạy liên tục', 'Running for'), fmtUp(dg.up), 'on']);
+  rows.push([L('Số lần sụt nguồn', 'Power dips (brownout)'), dg.bo, dg.bo ? 'danger' : 'on']);
+  rows.push([L('Số lần treo (watchdog)', 'Hangs (watchdog)'), dg.wd, dg.wd ? 'danger' : 'on']);
+  rows.push([L('Số lần lỗi chương trình', 'Program crashes'), dg.pn, dg.pn ? 'danger' : 'on']);
+  rows.push([L('Số lần nối lại module vân tay', 'Fingerprint module recoveries'), dg.fr, dg.fr ? 'warn' : 'on']);
+  rows.push([L('Số lần cảm biến báo có tay quá lâu', 'Stuck-touch events'), dg.gh, dg.gh ? 'warn' : 'on']);
+  rows.push([L('Lỗi giao tiếp vân tay (từ lúc bật)', 'Fingerprint comm errors (since boot)'), dg.fe, dg.fe > 20 ? 'warn' : 'on']);
+  rows.push([L('Bộ nhớ trống', 'Free memory'), (dg.hp / 1024).toFixed(0) + ' KB (min ' + (dg.mh / 1024).toFixed(0) + ' KB)', dg.mh < 20000 ? 'warn' : 'on']);
+  rows.push([L('Tốc độ vòng lặp', 'Loop speed'), dg.lp + L(' vòng/giây', ' loops/s'), dg.lp < 3 ? 'danger' : 'on']);
+  if (dg.bo) bad.push(L('Nguồn điện từng bị sụt ' + dg.bo + ' lần: kiểm tra bộ giảm áp, thêm tụ 1000 µF sát chân VIN, kiểm tra dây 12V.', 'Power dipped ' + dg.bo + ' times: check the buck converter, add a 1000 µF cap at VIN, check the 12V wiring.'));
+  if (dg.wd) bad.push(L('ESP32 từng bị treo và tự khởi động lại ' + dg.wd + ' lần.', 'ESP32 hung and rebooted itself ' + dg.wd + ' times.'));
+  if (dg.pn) bad.push(L('Chương trình từng bị lỗi và khởi động lại ' + dg.pn + ' lần.', 'Program crashed and rebooted ' + dg.pn + ' times.'));
+  if (dg.lp < 3) bad.push(L('Vòng lặp rất chậm (' + dg.lp + '/giây): hệ thống có thể đang bị kẹt.', 'Main loop is very slow (' + dg.lp + '/s): system may be stuck.'));
+  if (dg.fr) warn.push(L('Module vân tay từng không trả lời ' + dg.fr + ' lần và được nối lại: kiểm tra dây UART và nguồn 3,3V của module.', 'Fingerprint module stopped answering ' + dg.fr + ' times: check UART wiring and its 3.3V supply.'));
+  if (dg.gh) warn.push(L('Cảm biến vân tay từng báo có tay quá lâu ' + dg.gh + ' lần: lau mặt cảm biến, kiểm tra dây Touch Out và GND.', 'Fingerprint sensor reported a stuck touch ' + dg.gh + ' times: clean the sensor, check Touch Out and GND wires.'));
+  if (!st || !st.fp) bad.push(L('Module vân tay không kết nối.', 'Fingerprint module not connected.'));
+  if (!st || !st.rfid) warn.push(L('Module RFID không hoạt động.', 'RFID module not working.'));
+  return { rows, bad, warn };
+}
+function renderDiag(d) {
+  const box = document.getElementById('diagRows'), v = document.getElementById('diagVerdict');
+  if (!box || !v) return;
+  if (!d || !d.dg) {
+    v.className = 'diag-verdict'; v.innerText = d ? L('Firmware cũ chưa có chức năng này. Nạp lại bltt2.ino mới.', 'Old firmware lacks this. Re-flash the new bltt2.ino.') : L('Chưa kết nối.', 'Not connected.');
+    box.innerHTML = ''; lastDiag = null; return;
+  }
+  const r = buildDiag(d.dg, d); lastDiag = r;
+  if (r.bad.length) { v.className = 'diag-verdict bad'; v.innerHTML = '<b>' + L('Phát hiện lỗi', 'Problems found') + '</b><ul>' + r.bad.concat(r.warn).map(x => '<li>' + x + '</li>').join('') + '</ul>'; }
+  else if (r.warn.length) { v.className = 'diag-verdict warn'; v.innerHTML = '<b>' + L('Cần chú ý', 'Needs attention') + '</b><ul>' + r.warn.map(x => '<li>' + x + '</li>').join('') + '</ul>'; }
+  else { v.className = 'diag-verdict ok'; v.innerHTML = '<b>' + L('Không phát hiện lỗi', 'No problems found') + '</b><br>' + L('Hệ thống đang chạy bình thường.', 'The system is running normally.'); }
+  box.innerHTML = r.rows.map(x => `<div class="diag-row"><span>${x[0]}</span><b class="${x[2]}">${x[1]}</b></div>`).join('');
+}
+function copyDiagReport() {
+  if (!lastDiag) { showToast(L('⚠️ Chưa có dữ liệu để sao chép', '⚠️ No data to copy yet')); return; }
+  const t = ['HQT Smart Lock - ' + L('báo cáo lỗi', 'error report')]
+    .concat(lastDiag.rows.map(x => x[0] + ': ' + x[1]))
+    .concat(lastDiag.bad.concat(lastDiag.warn).map(x => '! ' + x)).join('\n');
+  copyToClipboard(t, L('📋 Đã sao chép báo cáo lỗi!', '📋 Error report copied!'));
+}
+{ const _rs2 = renderStatus; renderStatus = function (d) { _rs2(d); renderDiag(d); }; }
+renderDiag(null);
 
 updateLanguageUI();
 buildFindSelect();
