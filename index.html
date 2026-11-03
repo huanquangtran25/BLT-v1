@@ -834,6 +834,34 @@
       </div>
     </details>
 
+    <!-- Cập nhật firmware -->
+    <details class="group">
+      <summary><span class="gi"><svg class="i"><use href="#i-sliders2"/></svg></span><span data-i18n="grpFw">Cập nhật firmware</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="group-body">
+        <div class="wifi-block">
+          <div class="switch-row"><span data-i18n="fwCurLabel">Phiên bản trên xe</span><b id="fwCur">--</b></div>
+          <div class="switch-row"><span data-i18n="fwLatestLabel">Phiên bản mới nhất trên web</span><b id="fwLatest">--</b></div>
+          <div id="fwNote" style="font-size:12.5px; color:var(--subtext);"></div>
+          <button class="btn btn-add" data-i18n="btnFwCheck" onclick="checkLatestFw()">Kiểm tra bản mới</button>
+        </div>
+        <div class="wifi-block">
+          <span data-i18n="fwWifiDesc">WiFi để xe tải firmware (hotspot điện thoại hoặc WiFi nhà, loại 2.4GHz)</span>
+          <input id="fwWifiSsid" type="text" maxlength="32" placeholder="Tên WiFi" autocomplete="off">
+          <input id="fwWifiPass" type="password" maxlength="63" placeholder="Mật khẩu WiFi" autocomplete="off">
+          <button class="btn btn-add" data-i18n="btnFwWifi" onclick="saveFwWifi()">Lưu WiFi</button>
+        </div>
+        <div class="wifi-block">
+          <span data-i18n="fwUrlDesc">Link file firmware (.bin) trên web của bạn</span>
+          <input id="fwUrlInput" type="url" maxlength="150" placeholder="https://tenmiencuaban.com/firmware/firmware.bin" autocomplete="off">
+          <button class="btn btn-add" data-i18n="btnFwUrl" onclick="saveFwUrl()">Lưu link firmware</button>
+        </div>
+        <div class="wifi-block">
+          <span data-i18n="fwRunDesc">Khoá xe trước khi cập nhật. Khi bấm, Bluetooth sẽ ngắt khoảng 1 phút, xe tự tải firmware và khởi động lại. Không tắt nguồn trong lúc cập nhật.</span>
+          <button class="btn btn-lock" data-i18n="btnFwRun" onclick="startFwUpdate()">Cập nhật firmware ngay</button>
+        </div>
+      </div>
+    </details>
+
     <!-- Hỗ trợ -->
     <details class="group">
       <summary><span class="gi"><svg class="i"><use href="#i-help"/></svg></span><span data-i18n="contactTitle">Liên hệ hỗ trợ</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
@@ -1603,6 +1631,7 @@ function renderConfig(c) {
 
   const vf = document.getElementById('vcalFactorTxt');
   if (vf && c.vCal !== undefined) vf.innerText = Number(c.vCal).toFixed(4);
+  if (typeof renderFwInfo === 'function') renderFwInfo(c);
 
   if (!fieldsLoaded) {
     document.getElementById('bleNameInput').value = c.name || '';
@@ -1791,6 +1820,107 @@ async function savePin() {
     try { localStorage.setItem('savedPin', pin); } catch (e) {}
     document.getElementById('pinInput').value = pin;
     document.getElementById('newPin').value = '';
+  }
+}
+
+// ================== CẬP NHẬT FIRMWARE QUA WIFI ==================
+Object.assign(i18n.vi, {
+  grpFw: "Cập nhật firmware", fwCurLabel: "Phiên bản trên xe", fwLatestLabel: "Phiên bản mới nhất trên web",
+  btnFwCheck: "Kiểm tra bản mới",
+  fwWifiDesc: "WiFi để xe tải firmware (hotspot điện thoại hoặc WiFi nhà, loại 2.4GHz)", btnFwWifi: "Lưu WiFi",
+  fwUrlDesc: "Link file firmware (.bin) trên web của bạn", btnFwUrl: "Lưu link firmware",
+  fwRunDesc: "Khoá xe trước khi cập nhật. Khi bấm, Bluetooth sẽ ngắt khoảng 1 phút, xe tự tải firmware và khởi động lại. Không tắt nguồn trong lúc cập nhật.",
+  btnFwRun: "Cập nhật firmware ngay"
+});
+Object.assign(i18n.eng, {
+  grpFw: "Firmware update", fwCurLabel: "Version on vehicle", fwLatestLabel: "Latest version on web",
+  btnFwCheck: "Check for updates",
+  fwWifiDesc: "WiFi the vehicle uses to download firmware (phone hotspot or home WiFi, 2.4GHz)", btnFwWifi: "Save WiFi",
+  fwUrlDesc: "Firmware (.bin) link on your website", btnFwUrl: "Save firmware link",
+  fwRunDesc: "Lock the vehicle first. Bluetooth will drop for about 1 minute while the vehicle downloads the firmware and restarts. Do not cut power during the update.",
+  btnFwRun: "Update firmware now"
+});
+
+let fwLatest = null;        // số phiên bản mới nhất đọc từ web
+let fwFieldsLoaded = false;
+
+function fwDefaultUrl() {
+  try {
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      return new URL('firmware/firmware.bin', location.href).href;
+    }
+  } catch (e) {}
+  return '';
+}
+
+function renderFwInfo(c) {
+  const cur = document.getElementById('fwCur');
+  if (!cur) return;
+  cur.innerText = (c.fw !== undefined) ? ('v' + c.fw) : L('chưa hỗ trợ', 'not supported');
+  if (!fwFieldsLoaded) {
+    document.getElementById('fwWifiSsid').value = c.wifi || '';
+    document.getElementById('fwUrlInput').value = c.fwUrl || fwDefaultUrl();
+    fwFieldsLoaded = true;
+  }
+  updateFwNote();
+}
+
+function updateFwNote() {
+  const note = document.getElementById('fwNote');
+  if (!note) return;
+  const curV = cfg && cfg.fw;
+  document.getElementById('fwLatest').innerText = (fwLatest !== null) ? ('v' + fwLatest) : '--';
+  if (curV === undefined || fwLatest === null) { note.innerText = ''; return; }
+  if (fwLatest > curV) { note.innerText = L('🆕 Có bản mới, bấm "Cập nhật firmware ngay" bên dưới.', '🆕 New version available, tap "Update firmware now" below.'); note.style.color = 'var(--pink)'; }
+  else { note.innerText = L('✅ Xe đang chạy bản mới nhất.', '✅ Vehicle is up to date.'); note.style.color = 'var(--subtext)'; }
+}
+
+async function checkLatestFw() {
+  try {
+    const r = await fetch('firmware/version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const v = parseInt((await r.text()).trim(), 10);
+    if (isNaN(v)) throw new Error('bad version');
+    fwLatest = v;
+    updateFwNote();
+  } catch (e) {
+    fwLatest = null;
+    updateFwNote();
+    showToast(L('⚠️ Không đọc được firmware/version.txt trên web', '⚠️ Cannot read firmware/version.txt on the website'));
+  }
+}
+
+function saveFwWifi() {
+  const ssid = document.getElementById('fwWifiSsid').value.trim();
+  const pass = document.getElementById('fwWifiPass').value;
+  if (enc.encode(ssid).length < 1 || enc.encode(ssid).length > 32) { showToast(L('⚠️ Tên WiFi 1-32 ký tự!', '⚠️ WiFi name must be 1-32 bytes!')); return; }
+  if (ssid.indexOf('|') >= 0) { showToast(L('⚠️ Tên WiFi không được chứa dấu |', '⚠️ WiFi name cannot contain |')); return; }
+  if (pass.length > 0 && (enc.encode(pass).length < 8 || enc.encode(pass).length > 63)) { showToast(L('⚠️ Mật khẩu WiFi 8-63 ký tự (hoặc để trống nếu WiFi không mật khẩu)!', '⚠️ WiFi password must be 8-63 chars (or empty for open WiFi)!')); return; }
+  send('wifi:' + ssid + '|' + pass, L('📶 Đã lưu WiFi', '📶 WiFi saved'));
+  document.getElementById('fwWifiPass').value = '';
+}
+
+function saveFwUrl() {
+  const url = document.getElementById('fwUrlInput').value.trim();
+  if (!/^https?:\/\//i.test(url) || url.length > 150) { showToast(L('⚠️ Link phải bắt đầu bằng http:// hoặc https:// (tối đa 150 ký tự)!', '⚠️ Link must start with http:// or https:// (max 150 chars)!')); return; }
+  send('fwurl:' + url, L('🔗 Đã lưu link firmware', '🔗 Firmware link saved'));
+}
+
+async function startFwUpdate() {
+  if (!connected) { showToast(L('⚠️ Chưa kết nối thiết bị!', '⚠️ Not connected!')); return; }
+  if (lastStatus && lastStatus.unlocked) { showToast(L('⚠️ Hãy khoá xe trước khi cập nhật!', '⚠️ Lock the vehicle before updating!')); return; }
+  if (!cfg || !cfg.wifi) { showToast(L('⚠️ Hãy lưu WiFi trước!', '⚠️ Save WiFi first!')); return; }
+  if (!cfg.fwUrl) { showToast(L('⚠️ Hãy lưu link firmware trước!', '⚠️ Save the firmware link first!')); return; }
+  if (fwLatest !== null && cfg.fw !== undefined && fwLatest <= cfg.fw) {
+    if (!confirm(L('Xe đã chạy bản mới nhất. Vẫn cập nhật lại?', 'Already up to date. Update anyway?'))) return;
+  } else if (!confirm(L('Bắt đầu cập nhật firmware? Bluetooth sẽ ngắt khoảng 1 phút, đừng tắt nguồn xe.', 'Start firmware update? Bluetooth will drop for about 1 minute, do not cut power.'))) return;
+  const ok = await send('ota', L('⬆️ Đã gửi lệnh cập nhật', '⬆️ Update command sent'), true);
+  if (ok) {
+    toggleModal(false);
+    setTimeout(() => {
+      showConnect(true);
+      setConnMsg(L('Xe đang cập nhật firmware (~1 phút). Nghe tiếng bíp xong rồi bấm Kết nối lại.', 'Vehicle is updating (~1 min). After the beeps, tap Connect again.'), false);
+    }, 2500);
   }
 }
 
