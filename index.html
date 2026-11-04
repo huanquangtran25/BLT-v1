@@ -846,7 +846,9 @@
         </div>
         <div class="wifi-block">
           <span data-i18n="fwWifiDesc">WiFi để xe tải firmware (hotspot điện thoại hoặc WiFi nhà, loại 2.4GHz)</span>
-          <input id="fwWifiSsid" type="text" maxlength="32" placeholder="Tên WiFi" autocomplete="off">
+          <button class="btn btn-find" id="btnWifiScan" data-i18n="btnWifiScan" onclick="scanWifi()">Quét WiFi xung quanh</button>
+          <select id="fwWifiSel" onchange="onWifiPick()" style="display:none"></select>
+          <input id="fwWifiSsid" type="text" maxlength="32" placeholder="Tên WiFi (chọn ở trên hoặc nhập tay)" autocomplete="off">
           <input id="fwWifiPass" type="password" maxlength="63" placeholder="Mật khẩu WiFi" autocomplete="off">
           <button class="btn btn-add" data-i18n="btnFwWifi" onclick="saveFwWifi()">Lưu WiFi</button>
         </div>
@@ -1452,6 +1454,7 @@ function startPolling() {
 async function loadConfig() {
   try {
     const c = await readJson(chConfig);
+    if (c.wl) { renderWifiList(c.wl); return; }
     if (c.auth) { cfg = c; renderConfig(c); }
   } catch (e) { console.error('config', e); }
 }
@@ -1826,7 +1829,7 @@ async function savePin() {
 // ================== CẬP NHẬT FIRMWARE QUA WIFI ==================
 Object.assign(i18n.vi, {
   grpFw: "Cập nhật firmware", fwCurLabel: "Phiên bản trên xe", fwLatestLabel: "Phiên bản mới nhất trên web",
-  btnFwCheck: "Kiểm tra bản mới",
+  btnFwCheck: "Kiểm tra bản mới", btnWifiScan: "Quét WiFi xung quanh",
   fwWifiDesc: "WiFi để xe tải firmware (hotspot điện thoại hoặc WiFi nhà, loại 2.4GHz)", btnFwWifi: "Lưu WiFi",
   fwUrlDesc: "Link file firmware (.bin) trên web của bạn", btnFwUrl: "Lưu link firmware",
   fwRunDesc: "Khoá xe trước khi cập nhật. Khi bấm, Bluetooth sẽ ngắt khoảng 1 phút, xe tự tải firmware và khởi động lại. Không tắt nguồn trong lúc cập nhật.",
@@ -1834,7 +1837,7 @@ Object.assign(i18n.vi, {
 });
 Object.assign(i18n.eng, {
   grpFw: "Firmware update", fwCurLabel: "Version on vehicle", fwLatestLabel: "Latest version on web",
-  btnFwCheck: "Check for updates",
+  btnFwCheck: "Check for updates", btnWifiScan: "Scan nearby WiFi",
   fwWifiDesc: "WiFi the vehicle uses to download firmware (phone hotspot or home WiFi, 2.4GHz)", btnFwWifi: "Save WiFi",
   fwUrlDesc: "Firmware (.bin) link on your website", btnFwUrl: "Save firmware link",
   fwRunDesc: "Lock the vehicle first. Bluetooth will drop for about 1 minute while the vehicle downloads the firmware and restarts. Do not cut power during the update.",
@@ -1859,7 +1862,9 @@ function renderFwInfo(c) {
   cur.innerText = (c.fw !== undefined) ? ('v' + c.fw) : L('chưa hỗ trợ', 'not supported');
   if (!fwFieldsLoaded) {
     document.getElementById('fwWifiSsid').value = c.wifi || '';
-    document.getElementById('fwUrlInput').value = c.fwUrl || fwDefaultUrl();
+    const ui = document.getElementById('fwUrlInput');
+    ui.value = c.fwSet ? '' : fwDefaultUrl();
+    if (c.fwSet) ui.placeholder = L('Đã lưu link (nhập link mới để đổi)', 'Link saved (enter a new one to change)');
     fwFieldsLoaded = true;
   }
   updateFwNote();
@@ -1890,6 +1895,56 @@ async function checkLatestFw() {
   }
 }
 
+
+// ---- quét WiFi: xe quét, web chỉ chọn tên + nhập mật khẩu ----
+let wifiScanBusy = false;
+async function scanWifi() {
+  if (!connected) { showToast(L('⚠️ Chưa kết nối thiết bị!', '⚠️ Not connected!')); return; }
+  if (lastStatus && lastStatus.unlocked) { showToast(L('⚠️ Hãy khoá xe trước khi quét WiFi!', '⚠️ Lock the vehicle before scanning!')); return; }
+  if (wifiScanBusy) return;
+  wifiScanBusy = true;
+  const btn = document.getElementById('btnWifiScan');
+  const txt = btn.innerText;
+  btn.disabled = true; btn.innerText = L('Đang quét…', 'Scanning…');
+  try {
+    if (!(await send('wscan', null, true))) return;
+    let got = false;
+    for (let i = 0; i < 10 && connected; i++) {
+      await sleep(1000);
+      try {
+        const c = await readJson(chConfig);
+        if (c.wl) { renderWifiList(c.wl); got = true; break; }
+      } catch (e) {}
+    }
+    if (!got) showToast(L('⚠️ Không nhận được danh sách WiFi, thử lại', '⚠️ No WiFi list received, try again'));
+  } finally {
+    wifiScanBusy = false; btn.disabled = false; btn.innerText = txt;
+    setTimeout(loadConfig, 16000);
+  }
+}
+function renderWifiList(list) {
+  const sel = document.getElementById('fwWifiSel');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const first = document.createElement('option');
+  first.value = ''; first.textContent = list.length ? L('— Chọn WiFi —', '— Choose WiFi —') : L('Không thấy WiFi nào', 'No WiFi found');
+  sel.appendChild(first);
+  list.forEach(w => {
+    const o = document.createElement('option');
+    o.value = w[0];
+    o.textContent = w[0] + '  ' + (w[2] ? '🔒 ' : '') + (w[1] > -60 ? '▂▄▆' : w[1] > -75 ? '▂▄' : '▂');
+    sel.appendChild(o);
+  });
+  sel.style.display = 'block';
+  showToast(L('📶 Tìm thấy ' + list.length + ' WiFi', '📶 Found ' + list.length + ' WiFi'));
+}
+function onWifiPick() {
+  const v = document.getElementById('fwWifiSel').value;
+  if (!v) return;
+  document.getElementById('fwWifiSsid').value = v;
+  document.getElementById('fwWifiPass').focus();
+}
+
 function saveFwWifi() {
   const ssid = document.getElementById('fwWifiSsid').value.trim();
   const pass = document.getElementById('fwWifiPass').value;
@@ -1910,7 +1965,7 @@ async function startFwUpdate() {
   if (!connected) { showToast(L('⚠️ Chưa kết nối thiết bị!', '⚠️ Not connected!')); return; }
   if (lastStatus && lastStatus.unlocked) { showToast(L('⚠️ Hãy khoá xe trước khi cập nhật!', '⚠️ Lock the vehicle before updating!')); return; }
   if (!cfg || !cfg.wifi) { showToast(L('⚠️ Hãy lưu WiFi trước!', '⚠️ Save WiFi first!')); return; }
-  if (!cfg.fwUrl) { showToast(L('⚠️ Hãy lưu link firmware trước!', '⚠️ Save the firmware link first!')); return; }
+  if (!cfg.fwSet) { showToast(L('⚠️ Hãy lưu link firmware trước!', '⚠️ Save the firmware link first!')); return; }
   if (fwLatest !== null && cfg.fw !== undefined && fwLatest <= cfg.fw) {
     if (!confirm(L('Xe đã chạy bản mới nhất. Vẫn cập nhật lại?', 'Already up to date. Update anyway?'))) return;
   } else if (!confirm(L('Bắt đầu cập nhật firmware? Bluetooth sẽ ngắt khoảng 1 phút, đừng tắt nguồn xe.', 'Start firmware update? Bluetooth will drop for about 1 minute, do not cut power.'))) return;
