@@ -18,12 +18,12 @@ jobs:
       - name: Cai arduino-cli
         uses: arduino/setup-arduino-cli@v2
 
-      - name: Cai ESP32 core 2.0.18-arduino.5 va thu vien
+      - name: Cai ESP32 core 2.0.17 va thu vien
         run: |
           arduino-cli config init
           arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@2.0.18-arduino.5
+          arduino-cli core install esp32:esp32@2.0.17
           arduino-cli lib install "Adafruit Fingerprint Sensor Library" "Adafruit PN532" "Adafruit BusIO"
 
       - name: Gan so phien ban (100 + so lan build)
