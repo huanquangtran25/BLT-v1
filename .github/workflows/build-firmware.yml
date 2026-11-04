@@ -1,0 +1,51 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+    paths: ['bltt2.ino']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cai arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cai ESP32 core 2.0.18 va thu vien
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.18
+          arduino-cli lib install "Adafruit Fingerprint Sensor Library" "Adafruit PN532" "Adafruit BusIO"
+
+      - name: Gan so phien ban (100 + so lan build)
+        run: |
+          VER=$((100 + ${{ github.run_number }}))
+          echo "FW_VER=$VER" >> "$GITHUB_ENV"
+          mkdir -p build/bltt2
+          sed "s/^#define FW_VERSION .*/#define FW_VERSION $VER/" bltt2.ino > build/bltt2/bltt2.ino
+          grep -n "#define FW_VERSION" build/bltt2/bltt2.ino
+
+      - name: Bien dich
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs --output-dir build/out build/bltt2
+          ls -la build/out
+
+      - name: Xuat firmware len repo
+        run: |
+          mkdir -p firmware
+          cp build/out/bltt2.ino.bin firmware/firmware.bin
+          echo "$FW_VER" > firmware/version.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add firmware/firmware.bin firmware/version.txt
+          git commit -m "Firmware v$FW_VER [skip ci]"
+          git push
