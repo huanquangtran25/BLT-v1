@@ -1415,13 +1415,29 @@ async function connectBle() {
   }
 }
 
+let reconnectTries = 0;
+function autoReconnect() {
+  if (reconnectTries >= 4) {
+    setConnMsg(L('Mất kết nối. Bấm Kết nối để thử lại.', 'Disconnected. Tap Connect to retry.'), true);
+    return;
+  }
+  reconnectTries++;
+  setConnMsg(L('Mất kết nối, đang tự nối lại (' + reconnectTries + '/4)…', 'Connection lost, reconnecting (' + reconnectTries + '/4)…'), false);
+  setTimeout(async () => {
+    if (connected) return;
+    await connectBle();
+    if (connected) reconnectTries = 0; else autoReconnect();
+  }, 1200 + reconnectTries * 800);
+}
+
 function onDisconnected() {
   const was = connected;
   connected = false;
   pollGen++;
   if (was) {
     showConnect(true);
-    setConnMsg(L('Mất kết nối. Bấm Kết nối để thử lại.', 'Disconnected. Tap Connect to retry.'), true);
+    reconnectTries = 0;
+    autoReconnect();   // tự nối lại, không cần bấm
   }
 }
 
@@ -1622,7 +1638,9 @@ function renderConfig(c) {
   const rfidContainer = document.getElementById('rfidContainer');
   const cards = c.cards;
   if (rfidContainer && Array.isArray(cards)) {
-    if (cards.length === 0) {
+    if (cards.length === 0 && c.cardsCut) {
+      rfidContainer.innerHTML = `<div style="font-size:12px; color:var(--amber); text-align:center; padding:6px;">${L('Có ' + c.cardsCut + ' thẻ, danh sách quá dài để hiển thị. Xoá bớt thẻ không dùng.', c.cardsCut + ' cards saved, list too long to show. Delete unused cards.')}</div>`;
+    } else if (cards.length === 0) {
       rfidContainer.innerHTML = `<div style="font-size:12px; color:var(--subtext); text-align:center; padding:6px;">${L('Chưa có thẻ nào được lưu', 'No RFID cards saved')}</div>`;
     } else {
       rfidContainer.innerHTML = cards.map((uid, idx) => `

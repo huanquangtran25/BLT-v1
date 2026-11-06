@@ -422,10 +422,20 @@ void otaSetResult(const String &r);
 
 // ============== BLE CALLBACKS ================
 class ServerCb : public BLEServerCallbacks {
-  void onConnect(BLEServer*) override {
+  void onConnect(BLEServer*, esp_ble_gatts_cb_param_t* param) override {
     bleConnected = true;
     bleAuthed = false;
     configDirty = true;
+    // Xin dieu chinh tham so ket noi: chu ky 30-60ms, timeout giam sat 4 giay.
+    // Radio dung ban (WiFi quet/thu, nhieu dien) khong con lam rot ket noi chi sau vai tram ms.
+    esp_ble_conn_update_params_t cp;
+    memset(&cp, 0, sizeof(cp));
+    memcpy(cp.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+    cp.min_int = 0x18;    // 30 ms
+    cp.max_int = 0x30;    // 60 ms
+    cp.latency = 0;
+    cp.timeout = 400;     // 4000 ms
+    esp_ble_gap_update_conn_params(&cp);
   }
   void onDisconnect(BLEServer*) override {
     bleConnected = false;
@@ -876,6 +886,12 @@ void updateConfigChar() {
       j += String(fpIds[i]);
     }
     j += "]}";
+    // BLE chi cho doc toi da 512 byte: neu qua dai thi bo danh sach the (web van dung duoc)
+    if (j.length() > 500) {
+      int c0 = j.indexOf(",\"cards\":[");
+      int c1 = j.indexOf("]", c0);
+      if (c0 > 0 && c1 > c0) j = j.substring(0, c0) + ",\"cards\":[],\"cardsCut\":" + String((int)validRfidUIDs.size()) + j.substring(c1 + 1);
+    }
   }
   chConfig->setValue((uint8_t*)j.c_str(), j.length());
 }
