@@ -751,6 +751,11 @@ void loop() {
 void startBLE() {
   BLEDevice::init(bleName.c_str());
   BLEDevice::setMTU(185);
+  // Cong suat phat toi da (+9 dBm) de tang tam xa
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P9);
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCb());
