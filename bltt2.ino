@@ -570,6 +570,8 @@ static volatile uint32_t dbgLoopTotal = 0;  // tong so vong loop (de tinh toc do
 // Bo dem su co luu trong flash (hien tren web: muc Kiem tra loi)
 static uint8_t  diagResetCode = 9;          // 0 bat nguon,1 SW,2 panic,3 int_wdt,4 task_wdt,5 wdt,6 deepsleep,7 brownout,8 EN,9 khac
 static uint32_t diagBo = 0, diagWdt = 0, diagPan = 0, diagFpRec = 0, diagGhost = 0;
+static uint8_t  diagCrashStage = 0;     // buoc dang chay khi bi treo lan gan nhat (0 = chua co)
+static uint32_t diagCrashUp = 0;        // so giay chay duoc truoc khi treo
 static void diagSave(const char *k, uint32_t v) {
   Preferences dp;
   if (dp.begin("diag", false)) { dp.putUInt(k, v); dp.end(); }
@@ -612,8 +614,6 @@ static const char* const STG_NAME[] = {"-", "dau vong lap", "doc the RFID", "xu 
                                          "kiem tra ngu", "quet/thu WiFi", "cap nhat OTA", "dang ngu"};
 struct CrumbT { uint32_t magic; uint8_t stage; char cmd[24]; uint32_t upSec; uint32_t minHeap; uint32_t loops; };
 static RTC_NOINIT_ATTR CrumbT crumb;
-static uint8_t  diagCrashStage = 0;     // buoc dang chay khi bi treo lan gan nhat (0 = chua co)
-static uint32_t diagCrashUp = 0;        // so giay chay duoc truoc khi treo
 static inline void crumbStage(uint8_t s) { crumb.stage = s; }
 static void crumbTick() {               // cap nhat moi ~1 giay
   static unsigned long last = 0;
