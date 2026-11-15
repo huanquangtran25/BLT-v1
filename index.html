@@ -1346,6 +1346,8 @@ async function connectBle() {
   }
 
   btn.disabled = true;
+  const tc0 = performance.now();
+  const el = () => ' [' + ((performance.now() - tc0) / 1000).toFixed(1) + 's]';
   try {
     let server = null;
 
@@ -1370,14 +1372,14 @@ async function connectBle() {
       server = await bleDevice.gatt.connect();
     }
 
-    setConnMsg(L('Đã thấy xe, đang đọc dịch vụ (2/4)…', 'Found the vehicle, reading services (2/4)…'));
+    setConnMsg(L('Đã thấy xe, đang đọc dịch vụ (2/4)…', 'Found the vehicle, reading services (2/4)…') + el());
     const svc = await server.getPrimaryService(SERVICE_UUID);
     [chCmd, chStatus, chConfig] = await Promise.all([
       svc.getCharacteristic(CMD_UUID), svc.getCharacteristic(STATUS_UUID), svc.getCharacteristic(CONFIG_UUID)
     ]);
     chain = Promise.resolve();
 
-    setConnMsg(L('Đang xác thực PIN (3/4)…', 'Checking PIN (3/4)…'));
+    setConnMsg(L('Đang xác thực PIN (3/4)…', 'Checking PIN (3/4)…') + el());
     await writeCmd('auth:' + pin);
 
     let ok = false, lockSec = 0, authStatus = null;
@@ -1404,7 +1406,7 @@ async function connectBle() {
     lastStatus = authStatus;
     renderStatus(authStatus);
     showConnect(false);
-    showToast(L('✅ Đã kết nối xe', '✅ Connected'));
+    showToast(L('✅ Đã kết nối xe', '✅ Connected') + el());
     loadConfig();
     startPolling();
   } catch (e) {
