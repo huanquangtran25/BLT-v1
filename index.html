@@ -1380,11 +1380,11 @@ async function connectBle() {
     setConnMsg(L('Đang xác thực PIN (3/4)…', 'Checking PIN (3/4)…'));
     await writeCmd('auth:' + pin);
 
-    let ok = false, lockSec = 0;
+    let ok = false, lockSec = 0, authStatus = null;
     for (let i = 0; i < 12; i++) {
-      await sleep(i === 0 ? 120 : 250);
+      await sleep(250);
       const s = await readJson(chStatus);
-      if (s.auth) { ok = true; break; }
+      if (s.auth) { ok = true; authStatus = s; break; }
       if (s.lock) { lockSec = s.lock; break; }
     }
 
@@ -1400,12 +1400,13 @@ async function connectBle() {
     try { localStorage.setItem('savedPin', pin); } catch (e) {}
     fieldsLoaded = false;
     lastStatusMsg = "";
-    setConnMsg(L('Đang tải dữ liệu (4/4)…', 'Loading data (4/4)…'));
-    await loadConfig();
-    await refresh();
+    // Vào giao diện ngay bằng trạng thái đã đọc; cấu hình (dài hơn) tải nền phía sau
+    lastStatus = authStatus;
+    renderStatus(authStatus);
     showConnect(false);
-    startPolling();
     showToast(L('✅ Đã kết nối xe', '✅ Connected'));
+    loadConfig();
+    startPolling();
   } catch (e) {
     console.error(e);
     if (e && e.name === 'NotFoundError') {
