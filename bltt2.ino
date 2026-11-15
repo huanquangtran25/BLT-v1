@@ -350,6 +350,9 @@ BLECharacteristic* chStatus = nullptr;
 BLECharacteristic* chConfig = nullptr;
 
 volatile bool bleConnected = false;
+volatile bool connUpdatePending = false;   // xin doi tham so ket noi SAU khi da ket noi xong (khong lam cham luc bat tay)
+volatile unsigned long connUpdateAt = 0;
+esp_bd_addr_t connPeerBda;
 volatile bool bleAuthed = false;
 volatile bool configDirty = true;
 volatile unsigned long restartAdvAt = 0;
@@ -426,16 +429,10 @@ class ServerCb : public BLEServerCallbacks {
     bleConnected = true;
     bleAuthed = false;
     configDirty = true;
-    // Xin dieu chinh tham so ket noi: chu ky 30-60ms, timeout giam sat 4 giay.
-    // Radio dung ban (WiFi quet/thu, nhieu dien) khong con lam rot ket noi chi sau vai tram ms.
-    esp_ble_conn_update_params_t cp;
-    memset(&cp, 0, sizeof(cp));
-    memcpy(cp.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
-    cp.min_int = 0x18;    // 30 ms
-    cp.max_int = 0x30;    // 60 ms
-    cp.latency = 0;
-    cp.timeout = 400;     // 4000 ms
-    esp_ble_gap_update_conn_params(&cp);
+    // Doi tham so ket noi (timeout giam sat 4 giay) se xin sau 3 giay, khi web da ket noi xong
+    memcpy(connPeerBda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+    connUpdateAt = millis() + 3000;
+    connUpdatePending = true;
   }
   void onDisconnect(BLEServer*) override {
     bleConnected = false;
@@ -691,6 +688,18 @@ void loop() {
     if (!bleConnected && pServer != nullptr && millis() - lastAdvKick > 60000UL) {
       lastAdvKick = millis();
       BLEDevice::startAdvertising();
+    }
+  }
+
+  // Xin tham so ket noi on dinh hon (chu ky 30-60ms, timeout 4s) sau khi da ket noi xong
+  if (connUpdatePending && (long)(millis() - connUpdateAt) > 0) {
+    connUpdatePending = false;
+    if (bleConnected) {
+      esp_ble_conn_update_params_t cp;
+      memset(&cp, 0, sizeof(cp));
+      memcpy(cp.bda, connPeerBda, sizeof(esp_bd_addr_t));
+      cp.min_int = 0x18; cp.max_int = 0x30; cp.latency = 0; cp.timeout = 400;
+      esp_ble_gap_update_conn_params(&cp);
     }
   }
 

@@ -1366,22 +1366,23 @@ async function connectBle() {
         filters: [{ services: [SERVICE_UUID] }]
       });
       bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
-      setConnMsg(L('Đang kết nối...', 'Connecting...'));
+      setConnMsg(L('Đang kết nối với xe (1/4)… nếu xe đang ngủ, chạm vân tay trước', 'Connecting to the vehicle (1/4)… if it is asleep, touch the sensor first'));
       server = await bleDevice.gatt.connect();
     }
 
+    setConnMsg(L('Đã thấy xe, đang đọc dịch vụ (2/4)…', 'Found the vehicle, reading services (2/4)…'));
     const svc = await server.getPrimaryService(SERVICE_UUID);
-    chCmd = await svc.getCharacteristic(CMD_UUID);
-    chStatus = await svc.getCharacteristic(STATUS_UUID);
-    chConfig = await svc.getCharacteristic(CONFIG_UUID);
+    [chCmd, chStatus, chConfig] = await Promise.all([
+      svc.getCharacteristic(CMD_UUID), svc.getCharacteristic(STATUS_UUID), svc.getCharacteristic(CONFIG_UUID)
+    ]);
     chain = Promise.resolve();
 
-    setConnMsg(L('Đang xác thực PIN...', 'Checking PIN...'));
+    setConnMsg(L('Đang xác thực PIN (3/4)…', 'Checking PIN (3/4)…'));
     await writeCmd('auth:' + pin);
 
     let ok = false, lockSec = 0;
-    for (let i = 0; i < 8; i++) {
-      await sleep(300);
+    for (let i = 0; i < 12; i++) {
+      await sleep(i === 0 ? 120 : 250);
       const s = await readJson(chStatus);
       if (s.auth) { ok = true; break; }
       if (s.lock) { lockSec = s.lock; break; }
@@ -1399,6 +1400,7 @@ async function connectBle() {
     try { localStorage.setItem('savedPin', pin); } catch (e) {}
     fieldsLoaded = false;
     lastStatusMsg = "";
+    setConnMsg(L('Đang tải dữ liệu (4/4)…', 'Loading data (4/4)…'));
     await loadConfig();
     await refresh();
     showConnect(false);
