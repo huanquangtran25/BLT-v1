@@ -597,10 +597,56 @@ static void diagLoad(esp_reset_reason_t r) {
 }
 static void diagClear() {
   diagBo = diagWdt = diagPan = diagFpRec = diagGhost = 0;
+  diagCrashStage = 0; diagCrashUp = 0;
   dbgFpErr = 0;
   Preferences dp;
   if (dp.begin("diag", false)) { dp.clear(); dp.end(); }
 }      // so lan module van tay tra loi loi/khong tra loi
+
+// ============== DAU VET KHI TREO (breadcrumb, giu qua lan khoi dong lai cua watchdog) ================
+// Luu trong RTC_NOINIT: con nguyen khi ESP32 tu reset do treo/loi, mat khi cat dien. Sau khi khoi dong lai se in ra
+// "bi treo o buoc nao, lenh cuoi, chay duoc bao lau" va luu vao flash de xem tren web (muc Kiem tra loi).
+#define CRUMB_MAGIC 0xC0DE5A17UL
+enum { STG_NONE = 0, STG_LOOP, STG_RFID, STG_CMD, STG_FP, STG_ENROLL, STG_SLEEPCHK, STG_WIFI, STG_OTA, STG_SLEEP };
+static const char* const STG_NAME[] = {"-", "dau vong lap", "doc the RFID", "xu ly lenh BLE", "van tay", "dang ky van tay",
+                                         "kiem tra ngu", "quet/thu WiFi", "cap nhat OTA", "dang ngu"};
+struct CrumbT { uint32_t magic; uint8_t stage; char cmd[24]; uint32_t upSec; uint32_t minHeap; uint32_t loops; };
+static RTC_NOINIT_ATTR CrumbT crumb;
+static uint8_t  diagCrashStage = 0;     // buoc dang chay khi bi treo lan gan nhat (0 = chua co)
+static uint32_t diagCrashUp = 0;        // so giay chay duoc truoc khi treo
+static inline void crumbStage(uint8_t s) { crumb.stage = s; }
+static void crumbTick() {               // cap nhat moi ~1 giay
+  static unsigned long last = 0;
+  unsigned long n = millis();
+  if (n - last < 1000UL) return;
+  last = n;
+  crumb.upSec = n / 1000UL;
+  crumb.minHeap = ESP.getMinFreeHeap();
+  crumb.loops = dbgLoopTotal;
+}
+static void crumbBoot(esp_reset_reason_t r) {
+  bool bad = (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT);
+  bool valid = (crumb.magic == CRUMB_MAGIC);
+  Preferences dp;
+  if (bad && valid) {
+    char cmdc[24]; memcpy(cmdc, crumb.cmd, sizeof(cmdc)); cmdc[sizeof(cmdc) - 1] = 0;
+    uint8_t st = crumb.stage < (sizeof(STG_NAME) / sizeof(STG_NAME[0])) ? crumb.stage : 0;
+    Serial.printf("[TREO] Lan chay truoc bi reset (%s) khi dang o buoc: %s | lenh cuoi: '%s' | chay duoc %lu s | heap thap nhat %lu B | %lu vong loop\n",
+                  resetReasonStr(r), STG_NAME[st], cmdc, (unsigned long)crumb.upSec, (unsigned long)crumb.minHeap, (unsigned long)crumb.loops);
+    if (dp.begin("diag", false)) {
+      dp.putUChar("cstg", st); dp.putUInt("cup", crumb.upSec); dp.putString("ccmd", cmdc);
+      dp.end();
+    }
+  }
+  if (dp.begin("diag", true)) {
+    diagCrashStage = dp.getUChar("cstg", 0); diagCrashUp = dp.getUInt("cup", 0);
+    dp.end();
+  }
+  if (diagCrashStage) Serial.printf("[TREO] Lan treo gan nhat da luu: buoc '%s', sau %lu s chay\n", STG_NAME[diagCrashStage], (unsigned long)diagCrashUp);
+  memset(&crumb, 0, sizeof(crumb));
+  crumb.magic = CRUMB_MAGIC;
+  crumb.stage = STG_LOOP;
+}
 
 void setup() {
 #if BROWNOUT_DISABLE
@@ -616,6 +662,7 @@ void setup() {
   Serial.println("==========================================");
   Serial.printf("[RESET] Ly do khoi dong: %s\n", resetReasonStr(rstReason));
   diagLoad(rstReason);
+  crumbBoot(rstReason);
 
   // Dat mode truoc roi moi ghi muc logic, tranh relay bi nhay luc khoi dong
   pinMode(RELAY_POWER, OUTPUT);
@@ -711,6 +758,8 @@ void setup() {
 
 void loop() {
   wdtFeed();
+  crumbStage(STG_LOOP);
+  crumbTick();
   dbgLoops++;
   dbgLoopTotal++;
 #if USE_RFID
@@ -720,11 +769,14 @@ void loop() {
     if (pn532Init(2)) Serial.println("[RFID] Da khoi dong lai RFID (cham van tay)");
   }
 #endif
+  crumbStage(STG_RFID);
   handleRFIDReader();
 
   // Thuc thi lenh nhan tu BLE (chay o loop de khong chan tac vu BLE)
   char cbuf[CMD_LEN];
   while (xQueueReceive(cmdQueue, cbuf, 0) == pdTRUE) {
+    crumbStage(STG_CMD);
+    { String cv = String(cbuf); int cc = cv.indexOf(':'); String cn = (cc > 0) ? cv.substring(0, cc) : cv; strncpy(crumb.cmd, cn.c_str(), sizeof(crumb.cmd) - 1); crumb.cmd[sizeof(crumb.cmd) - 1] = 0; }   // chi luu ten lenh, khong luu PIN/mat khau
     processCommand(String(cbuf));
     configDirty = true;
   }
@@ -788,8 +840,8 @@ void loop() {
 
   ledService();
 
-  if (fpEnrolling) handleFpEnroll();
-  else handleFingerprintLogic();
+  if (fpEnrolling) { crumbStage(STG_ENROLL); handleFpEnroll(); }
+  else { crumbStage(STG_FP); handleFingerprintLogic(); }
 
   // Co hoat dong -> lam moi dong ho cho ngu
   if (bleConnected || isUnlocked || fpEnrolling || isAddingRfid || lastFingerState ||
@@ -797,6 +849,7 @@ void loop() {
     lastActivityMs = millis();
     if (ecoActive) exitEco();
   }
+  crumbStage(STG_SLEEPCHK);
   checkAutoSleep();
 
   // Che do tiet kiem: cho CPU nghi giua cac vong lap (van quet van tay moi 50ms)
@@ -901,7 +954,8 @@ void updateStatusChar() {
       j += ",\"wd\":" + String((unsigned long)diagWdt);
       j += ",\"pn\":" + String((unsigned long)diagPan);
       j += ",\"fr\":" + String((unsigned long)diagFpRec);
-      j += ",\"gh\":" + String((unsigned long)diagGhost) + "}";
+      j += ",\"gh\":" + String((unsigned long)diagGhost);
+      j += ",\"cs\":" + String((unsigned)diagCrashStage) + ",\"cu\":" + String((unsigned long)diagCrashUp) + "}";
     }
     j += ",\"msg\":\"" + jsonEscape(lastStatusMsg) + "\"}";
   }
@@ -1979,6 +2033,7 @@ static void otaFail(const String &msg) {
 }
 
 void startWifiOta() {
+  crumbStage(STG_OTA);
   if (isUnlocked) { lastStatusMsg = "Hay khoa xe truoc khi cap nhat firmware"; return; }
   if (fpEnrolling || isAddingRfid) { lastStatusMsg = "Dang dang ky the/van tay, hay doi"; return; }
   if (wifiSsid.length() == 0) { lastStatusMsg = "Chua luu WiFi, hay nhap WiFi truoc"; return; }
@@ -2045,6 +2100,7 @@ void startWifiOta() {
 
 // ============== QUET WIFI (de web chon ten WiFi) ================
 void scanWifiList() {
+  crumbStage(STG_WIFI);
   if (isUnlocked || fpEnrolling || isAddingRfid) { lastStatusMsg = "Hay khoa xe va khong dang ky van tay/the roi moi quet WiFi"; return; }
   Serial.println("[WIFI] Dang quet...");
   WiFi.mode(WIFI_STA);
@@ -2090,6 +2146,7 @@ void scanWifiList() {
 
 // ============== THU KET NOI WIFI DA LUU ================
 void testWifiNow() {
+  crumbStage(STG_WIFI);
   if (isUnlocked || fpEnrolling || isAddingRfid) { lastStatusMsg = "Hay khoa xe va khong dang ky van tay/the roi moi thu WiFi"; return; }
   if (wifiSsid.length() == 0) { lastStatusMsg = "Chua luu WiFi"; return; }
   wifiTestState = 0; wifiTestRssi = 0;
@@ -2172,6 +2229,7 @@ void exitEco() {
 }
 
 void enterLightSleep() {
+  crumbStage(STG_SLEEP);
 #if SLEEP_ENABLED
   Serial.println("[SLEEP] Vao ngu nong. Cham van tay de danh thuc.");
 #if SLEEP_BEEP

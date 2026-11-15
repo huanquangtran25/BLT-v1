@@ -2570,6 +2570,13 @@ function buildDiag(dg, st) {
   rows.push([L('Lỗi giao tiếp vân tay (từ lúc bật)', 'Fingerprint comm errors (since boot)'), dg.fe, dg.fe > 20 ? 'warn' : 'on']);
   rows.push([L('Bộ nhớ trống', 'Free memory'), (dg.hp / 1024).toFixed(0) + ' KB (min ' + (dg.mh / 1024).toFixed(0) + ' KB)', dg.mh < 20000 ? 'warn' : 'on']);
   rows.push([L('Tốc độ vòng lặp', 'Loop speed'), dg.lp + L(' vòng/giây', ' loops/s'), dg.lp < 3 ? 'danger' : 'on']);
+  const STG_VI = ['', 'đầu vòng lặp', 'đọc thẻ RFID', 'xử lý lệnh Bluetooth', 'vân tay', 'đăng ký vân tay', 'kiểm tra ngủ', 'quét/thử WiFi', 'cập nhật firmware', 'đang ngủ'];
+  const STG_EN = ['', 'main loop start', 'reading RFID', 'handling BLE command', 'fingerprint', 'fingerprint enrollment', 'sleep check', 'WiFi scan/test', 'firmware update', 'sleeping'];
+  if (dg.cs) {
+    const stn = (currentLang === 'vi' ? STG_VI : STG_EN)[dg.cs] || '?';
+    rows.push([L('Lần treo gần nhất', 'Last hang'), stn + ' · ' + fmtUp(dg.cu), 'danger']);
+    bad.push(L('Lần treo gần nhất xảy ra khi đang ở bước "' + stn + '", sau ' + fmtUp(dg.cu) + ' chạy.', 'Last hang happened during "' + stn + '", after ' + fmtUp(dg.cu) + ' of running.'));
+  }
   if (dg.bo) bad.push(L('Nguồn điện từng bị sụt ' + dg.bo + ' lần: kiểm tra bộ giảm áp, thêm tụ 1000 µF sát chân VIN, kiểm tra dây 12V.', 'Power dipped ' + dg.bo + ' times: check the buck converter, add a 1000 µF cap at VIN, check the 12V wiring.'));
   if (dg.wd) bad.push(L('ESP32 từng bị treo và tự khởi động lại ' + dg.wd + ' lần.', 'ESP32 hung and rebooted itself ' + dg.wd + ' times.'));
   if (dg.pn) bad.push(L('Chương trình từng bị lỗi và khởi động lại ' + dg.pn + ' lần.', 'Program crashed and rebooted ' + dg.pn + ' times.'));
