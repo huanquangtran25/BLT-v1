@@ -195,6 +195,12 @@
     .wish { font-style: italic; opacity: .85; margin-top: 6px; }
 
 
+
+    /* nhật ký như Serial Monitor */
+    .logbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0 8px; }
+    .logview { margin: 0; height: 240px; overflow: auto; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,.38); color: #cfe9d8; font: 11px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; -webkit-overflow-scrolling: touch; }
+    [data-theme="light"] .logview { background: rgba(15,23,42,.88); }
+
     /* ================= NỀN ĐỘNG + HIỆU ỨNG ================= */
     #bgLayer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
     #aurora { position: absolute; inset: 0; --p1: #38bdf8; --p2: #a78bfa; --p3: #34d399;
@@ -566,6 +572,22 @@
     <div class="row"><div class="label" data-i18n="relayDiagLabel">Rơ-le (Khóa/Đề)</div><div class="value" id="gRelayStatus">--</div></div>
     <div class="row"><div class="label" data-i18n="bleDiagLabel">Bluetooth</div><div class="value" id="gBleStatus">--</div></div>
   </section>
+
+  <details class="group" id="logGroup" ontoggle="onLogToggle()">
+    <summary><span class="gi"><svg class="i"><use href="#i-sliders2"/></svg></span><span>Nhật ký hệ thống</span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+    <div class="group-body">
+      <div class="logbar">
+        <button class="mini-btn on-seg" id="logTabDev" onclick="setLogTab('dev')">Xe</button>
+        <button class="mini-btn" id="logTabPar" onclick="setLogTab('par')">Thông số</button>
+        <button class="mini-btn" id="logTabWeb" onclick="setLogTab('web')">Web</button>
+        <span style="flex:1"></span>
+        <button class="mini-btn" id="logPauseBtn" onclick="toggleLogPause()">Dừng</button>
+        <button class="mini-btn" onclick="clearLog()">Xoá</button>
+        <button class="mini-btn copy-btn" onclick="copyLog()">Chép</button>
+      </div>
+      <pre id="logView" class="logview">Mở mục này khi đã kết nối để xem nhật ký của xe.</pre>
+    </div>
+  </details>
 
   <footer>
     <hr>
@@ -1291,7 +1313,8 @@ const dec = new TextDecoder();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const L = (vi, en) => (currentLang === 'vi' ? vi : en);
 
-let bleDevice = null, chCmd = null, chStatus = null, chConfig = null;
+let bleDevice = null, chCmd = null, chStatus = null, chConfig = null, chLog = null;
+const LOG_UUID = '7a1c0005-5b6e-4c1d-9a3e-2f6d8b4c1e01';
 let connected = false;
 let pollGen = 0;
 let lastStatus = null, cfg = null;
@@ -1322,6 +1345,7 @@ function writeCmd(text) {
 }
 
 function setConnMsg(msg, isErr) {
+  try { wlog((isErr ? 'LỖI: ' : '') + msg); } catch (e) {}
   const el = document.getElementById('connMsg');
   el.innerText = msg;
   el.style.color = isErr ? 'var(--pink)' : 'var(--subtext)';
@@ -1374,8 +1398,9 @@ async function connectBle() {
 
     setConnMsg(L('Đã thấy xe, đang đọc dịch vụ (2/4)…', 'Found the vehicle, reading services (2/4)…') + el());
     const svc = await server.getPrimaryService(SERVICE_UUID);
-    [chCmd, chStatus, chConfig] = await Promise.all([
-      svc.getCharacteristic(CMD_UUID), svc.getCharacteristic(STATUS_UUID), svc.getCharacteristic(CONFIG_UUID)
+    [chCmd, chStatus, chConfig, chLog] = await Promise.all([
+      svc.getCharacteristic(CMD_UUID), svc.getCharacteristic(STATUS_UUID), svc.getCharacteristic(CONFIG_UUID),
+      svc.getCharacteristic(LOG_UUID).catch(() => null)   // firmware cũ chưa có nhật ký
     ]);
     chain = Promise.resolve();
 
@@ -1502,6 +1527,7 @@ async function send(text, toastMsg, quiet) {
     return false;
   }
   try {
+    wlog('Gửi lệnh: ' + text.replace(/^(auth:|wifi:[^|]*\|).*/, '$1***'));
     await writeCmd(text);
     if (toastMsg) showToast(toastMsg);
     if (!quiet) {
@@ -1850,6 +1876,71 @@ async function savePin() {
     document.getElementById('pinInput').value = pin;
     document.getElementById('newPin').value = '';
   }
+}
+
+
+// ================== NHẬT KÝ (như Serial Monitor) ==================
+let devLog = '', webLog = '', logTab = 'dev', logPaused = false, logLoopGen = 0, logWarned = false;
+const LOG_MAX = 60000;
+function wlog(msg) {
+  const t = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+  webLog += '[' + t + '] ' + msg + '\n';
+  if (webLog.length > LOG_MAX) webLog = webLog.slice(-LOG_MAX);
+  if (logTab === 'web') renderLog();
+}
+function logText() {
+  if (logTab === 'dev') return devLog || (chLog ? '(chưa có dòng nhật ký nào)' : '(chưa kết nối, hoặc firmware chưa hỗ trợ nhật ký — hãy cập nhật firmware)');
+  if (logTab === 'web') return webLog || '(trống)';
+  try { return JSON.stringify({ trangThai: lastStatus, cauHinh: cfg }, null, 1); } catch (e) { return String(e); }
+}
+function renderLog() {
+  const el = document.getElementById('logView');
+  if (!el || logPaused) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  el.textContent = logText();
+  if (atBottom || logTab !== 'par') el.scrollTop = el.scrollHeight;
+}
+function setLogTab(t) {
+  logTab = t;
+  ['Dev', 'Par', 'Web'].forEach(k => document.getElementById('logTab' + k).classList.toggle('on-seg', k.toLowerCase() === t));
+  logPaused = false; document.getElementById('logPauseBtn').innerText = L('Dừng', 'Pause');
+  renderLog();
+}
+function toggleLogPause() {
+  logPaused = !logPaused;
+  document.getElementById('logPauseBtn').innerText = logPaused ? L('Tiếp', 'Resume') : L('Dừng', 'Pause');
+  if (!logPaused) renderLog();
+}
+function clearLog() { if (logTab === 'dev') devLog = ''; else if (logTab === 'web') webLog = ''; renderLog(); }
+async function copyLog() {
+  const txt = logText();
+  try { await navigator.clipboard.writeText(txt); showToast(L('📋 Đã chép nhật ký', '📋 Log copied')); }
+  catch (e) { showToast(L('⚠️ Không chép được, hãy chọn chữ và chép tay', '⚠️ Copy failed, select the text manually')); }
+}
+function onLogToggle() {
+  const open = document.getElementById('logGroup').open;
+  if (open) { renderLog(); startLogLoop(); } else logLoopGen++;
+}
+function startLogLoop() {
+  const g = ++logLoopGen;
+  (async () => {
+    while (g === logLoopGen && document.getElementById('logGroup').open) {
+      if (connected && chLog) {
+        try {
+          for (let i = 0; i < 8; i++) {
+            const v = await gatt(() => chLog.readValue());
+            if (!v || v.byteLength === 0) break;
+            devLog += dec.decode(v);
+            if (devLog.length > LOG_MAX) devLog = devLog.slice(-LOG_MAX);
+          }
+        } catch (e) { /* mất kết nối hoặc đang bận */ }
+        if (logTab !== 'web') renderLog();
+      } else if (connected && !chLog && !logWarned) {
+        logWarned = true; renderLog();
+      }
+      await sleep(1200);
+    }
+  })();
 }
 
 // ================== CẬP NHẬT FIRMWARE QUA WIFI ==================

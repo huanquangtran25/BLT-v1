@@ -75,6 +75,44 @@
 #include "esp_task_wdt.h"
 #include "driver/rtc_io.h"
 
+// ============== NHAT KY (nhu Serial Monitor) -> doc qua BLE ==============
+// Moi dong Serial.print/println/printf van ra cong USB nhu cu, dong thoi duoc luu vao bo nho vong (3 KB)
+// de trang web doc qua BLE va hien thi trong cua so "Nhat ky".
+#define LOG_UUID     "7a1c0005-5b6e-4c1d-9a3e-2f6d8b4c1e01"
+#define LOG_BUF_SIZE 3072
+static char logBuf[LOG_BUF_SIZE];
+static uint16_t logHead = 0, logTail = 0;
+static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
+static void logPut(const uint8_t* b, size_t n) {
+  portENTER_CRITICAL(&logMux);
+  for (size_t i = 0; i < n; i++) {
+    logBuf[logHead] = (char)b[i];
+    logHead = (logHead + 1) % LOG_BUF_SIZE;
+    if (logHead == logTail) logTail = (logTail + 1) % LOG_BUF_SIZE;   // day: bo dong cu nhat
+  }
+  portEXIT_CRITICAL(&logMux);
+}
+static size_t logTake(uint8_t* out, size_t maxn) {
+  size_t n = 0;
+  portENTER_CRITICAL(&logMux);
+  while (logTail != logHead && n < maxn) {
+    out[n++] = (uint8_t)logBuf[logTail];
+    logTail = (logTail + 1) % LOG_BUF_SIZE;
+  }
+  portEXIT_CRITICAL(&logMux);
+  return n;
+}
+class TeeSerialClass : public Print {
+ public:
+  using Print::write;
+  void begin(unsigned long baud) { Serial.begin(baud); }
+  void flush() { Serial.flush(); }
+  size_t write(uint8_t c) override { Serial.write(c); logPut(&c, 1); return 1; }
+  size_t write(const uint8_t* b, size_t n) override { Serial.write(b, n); logPut(b, n); return n; }
+};
+static TeeSerialClass TeeSerial;
+#define Serial TeeSerial
+
 // ============== MAU DEN LED CAM BIEN VAN TAY ==============
 // ZW101 dung ma mau theo bit: 1 = xanh duong, 2 = xanh la, 4 = do (3 = lo, 5 = tim, 6 = vang, 7 = trang).
 // Neu den len sai mau: bam "Thu mau den van tay" trong Cai dat, xem ma nao ra mau nao roi sua 3 dong duoi.
@@ -349,6 +387,7 @@ BLECharacteristic* chCmd = nullptr;
 BLECharacteristic* chStatus = nullptr;
 BLECharacteristic* chConfig = nullptr;
 
+BLECharacteristic* chLog = nullptr;
 volatile bool bleConnected = false;
 volatile bool connUpdatePending = false;   // xin doi tham so ket noi SAU khi da ket noi xong (khong lam cham luc bat tay)
 volatile unsigned long connUpdateAt = 0;
@@ -424,6 +463,14 @@ void testWifiNow();
 void otaSetResult(const String &r);
 
 // ============== BLE CALLBACKS ================
+class LogCb : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic* c) override {
+    uint8_t tmp[400];
+    size_t n = bleAuthed ? logTake(tmp, sizeof(tmp)) : 0;   // chi gui nhat ky cho nguoi da nhap dung PIN
+    c->setValue(tmp, n);
+  }
+};
+
 class ServerCb : public BLEServerCallbacks {
   void onConnect(BLEServer*, esp_ble_gatts_cb_param_t* param) override {
     bleConnected = true;
@@ -776,6 +823,8 @@ void startBLE() {
 
   chStatus = svc->createCharacteristic(STATUS_UUID, BLECharacteristic::PROPERTY_READ);
   chConfig = svc->createCharacteristic(CONFIG_UUID, BLECharacteristic::PROPERTY_READ);
+  chLog = svc->createCharacteristic(LOG_UUID, BLECharacteristic::PROPERTY_READ);
+  chLog->setCallbacks(new LogCb());
 
   String stub = "{\"auth\":false}";
   chStatus->setValue((uint8_t*)stub.c_str(), stub.length());
